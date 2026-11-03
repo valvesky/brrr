@@ -89,7 +89,7 @@ serializes its own edits, but external editors aren't locked out.
 
 ## How it works
 
-Omapower watches processes owned by your user in its visible PID namespace. It uses kernel process events when available, backed by a recovery scan every five seconds to repair missed events. Reported stream errors or overflows trigger an immediate recovery scan. When events aren't available it scans every 500 ms instead; `omapower --poll` forces that mode. Very short-lived processes may still be missed. You don't need root or extra capabilities.
+Omapower watches the commands you start, however you start them (`make && zig build`, a script, `sudo zig build`), in its visible PID namespace. That means processes owned by your user, plus processes running as another user (such as root through `sudo`) that carry your login UID, which the kernel keeps across `sudo` and `su`. Other users' processes and system services don't match. It uses kernel process events when available, backed by a recovery scan every five seconds to repair missed events. Reported stream errors or overflows trigger an immediate recovery scan. When events aren't available it scans every 500 ms instead; `omapower --poll` forces that mode. Very short-lived processes may still be missed. You don't need root or extra capabilities.
 
 A manual profile change that releases Omapower's hold is respected until the matching processes finish. Other applications' holds and system policy can also affect the effective profile. The helper handles power-profiles-daemon restarts and retries failed releases; after an unrecoverable error the plugin service (or systemd, in standalone mode) restarts it within five seconds.
 

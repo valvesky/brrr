@@ -94,6 +94,18 @@ static gboolean read_at(int dir, const char *file, char *buffer, size_t capacity
     return TRUE;
 }
 
+/* Commands you start, including through sudo: either owned by you, or carrying
+ * your login UID. The kernel keeps the login UID across sudo/su, while other
+ * users' and system processes have a different or unset (-1) one. */
+static gboolean started_by_user(int dir, const struct stat *st) {
+    if (st->st_uid == getuid()) return TRUE;
+    char text[16], *end;
+    if (!read_at(dir, "loginuid", text, sizeof(text))) return FALSE;
+    errno = 0;
+    guint64 loginuid = g_ascii_strtoull(text, &end, 10);
+    return errno == 0 && end != text && (*end == '\0' || *end == '\n') && loginuid == (guint64)getuid();
+}
+
 /* Open the directory once: UID, comm and start time must refer to the same PID
  * incarnation. Only the final newline in comm is a delimiter, not whitespace. */
 static gboolean process_info(ProcessWatch *watch, pid_t pid, char name[32], guint64 *start) {
@@ -102,14 +114,14 @@ static gboolean process_info(ProcessWatch *watch, pid_t pid, char name[32], guin
     int dir = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dir < 0) return FALSE;
     struct stat st;
-    gboolean valid = fstat(dir, &st) == 0 && st.st_uid == getuid()
-        && read_at(dir, "comm", name, 32);
+    gboolean valid = fstat(dir, &st) == 0 && read_at(dir, "comm", name, 32);
     if (valid) {
         size_t length = strlen(name);
         if (length && name[length - 1] == '\n') name[length - 1] = '\0';
-        valid = g_hash_table_contains(watch->commands, name)
-            && read_at(dir, "stat", statbuf, sizeof(statbuf));
+        /* Check the cheap name match before reading the login UID. */
+        valid = g_hash_table_contains(watch->commands, name) && started_by_user(dir, &st);
     }
+    if (valid) valid = read_at(dir, "stat", statbuf, sizeof(statbuf));
     close(dir);
     if (!valid) return FALSE;
     char *tail = strrchr(statbuf, ')');
