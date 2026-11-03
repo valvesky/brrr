@@ -8,15 +8,29 @@ static void test_config(void) {
     gchar *file = g_build_filename(dir, "config.json", NULL);
     GHashTable *names = load_commands(file, &error);
     g_assert_no_error(error);
-    g_assert_true(g_hash_table_contains(names, "rustc"));
-    g_assert_true(g_hash_table_contains(names, "cargo"));
+    const char *defaults[] = {
+        "rustc", "cargo", "gcc", "g++", "cc", "c++", "cc1", "cc1plus",
+        "clang", "clang++", "zig", "go", "javac", "swiftc", "swift-frontend",
+        "gfortran", "flang", "nvcc", "ghc"
+    };
+    g_assert_cmpuint(g_hash_table_size(names), ==, G_N_ELEMENTS(defaults));
+    for (guint i = 0; i < G_N_ELEMENTS(defaults); i++) {
+        g_assert_true(g_hash_table_contains(names, defaults[i]));
+        g_assert_cmpuint(strlen(defaults[i]), <=, 15);
+    }
     g_hash_table_unref(names);
 
     g_assert_true(g_file_set_contents(file, "{\"commands\":[\"make\"]}", -1, &error));
     names = load_commands(file, &error);
     g_assert_no_error(error);
     g_assert_true(g_hash_table_contains(names, "make"));
-    g_assert_false(g_hash_table_contains(names, "rustc"));
+    g_assert_cmpuint(g_hash_table_size(names), ==, 1);
+    g_hash_table_unref(names);
+
+    g_assert_true(g_file_set_contents(file, "{\"commands\":[]}", -1, &error));
+    names = load_commands(file, &error);
+    g_assert_no_error(error);
+    g_assert_cmpuint(g_hash_table_size(names), ==, 0);
     g_hash_table_unref(names);
 
     g_assert_true(g_file_set_contents(file, "{\"commands\":[\"/bin/rustc\"]}", -1, &error));

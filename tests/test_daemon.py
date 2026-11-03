@@ -18,6 +18,11 @@ ADDRESS = os.environ['DBUS_SESSION_BUS_ADDRESS']
 PP_NAME = 'net.hadess.PowerProfiles'
 PP_PATH = '/net/hadess/PowerProfiles'
 COMM = 'oma_evt_test'
+DEFAULT_COMMANDS = sorted([
+    'rustc', 'cargo', 'gcc', 'g++', 'cc', 'c++', 'cc1', 'cc1plus',
+    'clang', 'clang++', 'zig', 'go', 'javac', 'swiftc', 'swift-frontend',
+    'gfortran', 'flang', 'nvcc', 'ghc',
+])
 SYSTEMD = 'org.freedesktop.systemd1'
 MANAGER = '/org/freedesktop/systemd1'
 UNIT_PATH = MANAGER + '/unit/omapower_2eservice'
@@ -624,7 +629,7 @@ class ServiceMonitor(unittest.TestCase):
 
     def test_configuration_notifications_and_repair(self):
         until(lambda: self.read_states() is not None and bool(self.configs))
-        self.assertEqual(self.configs[-1], {'configError': False, 'commands': ['cargo', 'rustc']})
+        self.assertEqual(self.configs[-1], {'configError': False, 'commands': DEFAULT_COMMANDS})
         self.config.write_text('invalid')
         until(lambda: self.read_states() is not None and self.configs[-1]['configError'])
         temporary = self.config.with_suffix('.tmp')
@@ -844,7 +849,7 @@ ShellRoot {
         self.assertFalse(self.snapshot.get('setupError'))
 
     def test_widget_updates_without_periodic_queries(self):
-        self.wait(lambda state: state.get('service') == 'inactive' and state.get('commands') == ['cargo', 'rustc'])
+        self.wait(lambda state: state.get('service') == 'inactive' and state.get('commands') == DEFAULT_COMMANDS)
         config = self.config_home / 'omapower' / 'config.json'
         config.write_text('{"commands":["gcc"]}')
         self.wait(lambda state: state.get('commands') == ['gcc'])

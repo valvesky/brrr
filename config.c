@@ -15,8 +15,14 @@ GHashTable *load_commands(const char *path, GError **error) {
     if (!json_parser_load_from_file(parser, path, error)) {
         if (g_error_matches(*error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
             g_clear_error(error);
-            g_hash_table_add(names, g_strdup("rustc"));
-            g_hash_table_add(names, g_strdup("cargo"));
+            /* Include GCC worker processes as well as compiler drivers. */
+            const char *defaults[] = {
+                "rustc", "cargo", "gcc", "g++", "cc", "c++", "cc1", "cc1plus",
+                "clang", "clang++", "zig", "go", "javac", "swiftc", "swift-frontend",
+                "gfortran", "flang", "nvcc", "ghc"
+            };
+            for (guint i = 0; i < G_N_ELEMENTS(defaults); i++)
+                g_hash_table_add(names, g_strdup(defaults[i]));
             g_object_unref(parser);
             return names;
         }

@@ -28,7 +28,7 @@ Omapower gives demanding commands a little extra power, without leaving your mac
 - **Your usual profile afterward** — releases its hold when the work is done.
 - **Optional bar widget** — see your profile, edit watched commands, and start or stop the service.
 
-Watches `rustc` and `cargo` by default. Choose your own commands in the widget or with `omapower --add NAME`.
+Watches common compilers by default, including Rust/Cargo, GCC, Clang, Zig, Go, Java, Swift, Fortran, CUDA, and GHC. Choose your own commands in the widget or with `omapower --add NAME`.
 
 No root required. A manual profile change that releases Omapower's hold is respected until the matching commands finish.
 

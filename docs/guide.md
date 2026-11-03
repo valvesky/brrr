@@ -67,7 +67,9 @@ Run `systemctl --user disable --now omapower`, remove the user service file, and
 
 ## Choose commands
 
-Omapower watches `rustc` and `cargo` by default. Add or remove names in the widget, or use:
+By default, Omapower watches `rustc`, `cargo`, `gcc`, `g++`, `cc`, `c++`, `cc1`, `cc1plus`, `clang`, `clang++`, `zig`, `go`, `javac`, `swiftc`, `swift-frontend`, `gfortran`, `flang`, `nvcc`, `ghc`. GCC's `cc1` and `cc1plus` workers are included so compilation stays covered independently of the driver. Defaults apply only when the configuration file is missing; existing command lists (including empty lists) are left unchanged.
+
+Add or remove names in the widget, or use:
 
 ```sh
 ~/.local/share/omapower/omapower --add NAME
