@@ -1,6 +1,6 @@
 #include "omapower.h"
 
-#include <json-glib/json-glib.h>
+#include "json-util.h"
 
 #include <gio/gio.h>
 #include <glib-unix.h>
@@ -49,22 +49,10 @@ static void service_config_changed(const char *path, const GError *monitor_error
     }
     GError *error = NULL;
     GHashTable *commands = load_commands(path, &error);
-    JsonBuilder *builder = json_builder_new();
-    json_builder_begin_object(builder);
-    json_builder_set_member_name(builder, "configError");
-    json_builder_add_boolean_value(builder, commands == NULL);
-    json_builder_set_member_name(builder, "commands");
-    json_builder_begin_array(builder);
-    if (commands) {
-        GList *keys = g_list_sort(g_hash_table_get_keys(commands), (GCompareFunc)g_strcmp0);
-        for (GList *p = keys; p; p = p->next) json_builder_add_string_value(builder, p->data);
-        g_list_free(keys);
-        g_hash_table_unref(commands);
-    }
-    json_builder_end_array(builder);
-    json_builder_end_object(builder);
-    JsonNode *root = json_builder_get_root(builder);
-    gchar *json = json_to_string(root, FALSE);
+    gchar *names = json_names(commands);
+    gchar *json = g_strdup_printf("{\"configError\":%s,\"commands\":%s}", commands ? "false" : "true", names);
+    g_free(names);
+    if (commands) g_hash_table_unref(commands);
     if (g_strcmp0(json, watch->last_config)) {
         g_print("%s\n", json);
         if (fflush(stdout) != 0) {
@@ -74,8 +62,6 @@ static void service_config_changed(const char *path, const GError *monitor_error
     }
     g_free(watch->last_config);
     watch->last_config = json;
-    json_node_free(root);
-    g_object_unref(builder);
     g_clear_error(&error); /* invalid configuration is displayed, not fatal to the widget */
 }
 

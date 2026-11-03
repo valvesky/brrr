@@ -1,6 +1,6 @@
 #include "omapower.h"
 #include <glib-unix.h>
-#include <json-glib/json-glib.h>
+#include "json-util.h"
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -41,29 +41,20 @@ static void fail(App *app, const char *message) {
 
 static gboolean write_status(App *app, GError **error) {
     GHashTable *active = process_watch_active(app->processes);
-    GList *keys = g_list_sort(g_hash_table_get_keys(active), (GCompareFunc)g_strcmp0);
-    JsonBuilder *builder = json_builder_new();
-    json_builder_begin_object(builder);
-    json_builder_set_member_name(builder, "active");
-    json_builder_begin_array(builder);
-    for (GList *p = keys; p; p = p->next) json_builder_add_string_value(builder, p->data);
-    json_builder_end_array(builder);
-    json_builder_set_member_name(builder, "holding"); json_builder_add_boolean_value(builder, app->holding);
-    json_builder_set_member_name(builder, "suppressed"); json_builder_add_boolean_value(builder, app->suppressed);
-    json_builder_set_member_name(builder, "available"); json_builder_add_boolean_value(builder, app->owner != NULL);
-    json_builder_set_member_name(builder, "monitor"); json_builder_add_string_value(builder, process_watch_mode(app->processes));
-    json_builder_end_object(builder);
-    JsonNode *root = json_builder_get_root(builder);
-    gchar *json = json_to_string(root, FALSE);
+    gchar *names = json_names(active);
+    char *mode = json_quote(process_watch_mode(app->processes));
+    if (!mode) g_error("cannot encode JSON detection mode");
+    gchar *json = g_strdup_printf("{\"active\":%s,\"holding\":%s,\"suppressed\":%s,\"available\":%s,\"monitor\":%s}",
+        names, app->holding ? "true" : "false", app->suppressed ? "true" : "false",
+        app->owner ? "true" : "false", mode);
+    g_free(names);
+    free(mode);
     gboolean written = !g_strcmp0(json, app->last_status) || g_file_set_contents(app->status, json, -1, error);
     if (written) {
         if (g_strcmp0(json, app->last_status)) g_printerr("omapower: state %s\n", json);
         g_free(app->last_status);
         app->last_status = json;
     } else g_free(json);
-    json_node_free(root);
-    g_object_unref(builder);
-    g_list_free(keys);
     g_hash_table_unref(active);
     return written;
 }

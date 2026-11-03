@@ -10,7 +10,7 @@ unit=$config/systemd/user/omapower.service
 
 missing_packages() {
   local package
-  for package in base-devel linux-api-headers glib2 json-glib power-profiles-daemon; do
+  for package in base-devel linux-api-headers glib2 power-profiles-daemon; do
     /usr/bin/pacman -Q "$package" >/dev/null 2>&1 || printf '%s\n' "$package"
   done
 }
@@ -45,11 +45,13 @@ case ${1:-} in
     mkdir -p -- "$data" "$(dirname -- "$unit")"
     exec 9>"$data/setup.lock"
     flock -n 9 || { echo 'Another setup is already running.' >&2; exit 1; }
-    make -C "$root" -B omapower
     binary_tmp=$(mktemp "$data/.omapower.XXXXXX")
     unit_tmp=$(mktemp "$(dirname -- "$unit")/.omapower.XXXXXX")
     trap 'rm -f -- "$binary_tmp" "$unit_tmp"' EXIT
-    install -m 755 -- "$root/omapower" "$binary_tmp"
+    # Build outside the checkout: omarchy-shell reloads the plugin when its
+    # directory changes, which kills this script mid-setup.
+    OMAPOWER_OUT=$binary_tmp make -C "$root" -B omapower
+    chmod 755 -- "$binary_tmp"
     # Quote systemd ExecStart, including literal percent specifiers.
     executable=$data/omapower
     [[ $executable != *$'\n'* && $executable != *$'\r'* ]] || exit 1

@@ -814,7 +814,7 @@ ShellRoot {
     def test_setup_cancel_auth_failure_and_retry(self):
         self.setup_cancel.touch()
         self.wait(lambda state: state.get('ready') is True)
-        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["json-glib"]}')
+        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["glib2"]}')
         self.send_control(dict(check=True))
         self.wait(lambda state: state.get('ready') is False and not state.get('checking'))
         self.send_control(dict(request=True))
@@ -838,7 +838,7 @@ ShellRoot {
 
     def test_setup_with_successful_auth_runs_build_then_refreshes(self):
         self.wait(lambda state: state.get('ready') is True)
-        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["json-glib"]}')
+        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["glib2"]}')
         self.send_control(dict(check=True))
         self.wait(lambda state: state.get('ready') is False and not state.get('checking'))
         self.send_control(dict(request=True))

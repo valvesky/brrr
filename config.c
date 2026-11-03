@@ -1,6 +1,6 @@
 #include "omapower.h"
 
-#include <json-glib/json-glib.h>
+#include "json-util.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -9,52 +9,98 @@
 #include <sys/file.h>
 #include <unistd.h>
 
-GHashTable *load_commands(const char *path, GError **error) {
+static struct json_value_s *read_config(const char *path, GError **error) {
+    gchar *contents = NULL;
+    gsize length = 0;
+    if (!g_file_get_contents(path, &contents, &length, error)) return NULL;
+    struct json_parse_result_s result = {0};
+    struct json_value_s *root = NULL;
+    if (g_utf8_validate(contents, length, NULL))
+        root = json_parse_ex(contents, length, json_parse_flags_default, NULL, NULL, &result);
+    g_free(contents);
+    if (!root)
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL,
+                    "invalid JSON configuration (error %zu at byte %zu)", result.error, result.error_offset);
+    return root;
+}
+
+static GHashTable *commands_from_json(struct json_value_s *root, GError **error) {
     GHashTable *names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
-    JsonParser *parser = json_parser_new();
-    if (!json_parser_load_from_file(parser, path, error)) {
-        if (g_error_matches(*error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
-            g_clear_error(error);
-            /* Include GCC worker processes as well as compiler drivers. */
-            const char *defaults[] = {
-                "rustc", "cargo", "gcc", "g++", "cc", "c++", "cc1", "cc1plus",
-                "clang", "clang++", "zig", "go", "javac", "swiftc", "swift-frontend",
-                "gfortran", "flang", "nvcc", "ghc"
-            };
-            for (guint i = 0; i < G_N_ELEMENTS(defaults); i++)
-                g_hash_table_add(names, g_strdup(defaults[i]));
-            g_object_unref(parser);
-            return names;
-        }
-        goto fail;
-    }
-    JsonNode *root = json_parser_get_root(parser);
-    JsonObject *obj = JSON_NODE_HOLDS_OBJECT(root) ? json_node_get_object(root) : NULL;
-    JsonNode *node = obj ? json_object_get_member(obj, "commands") : NULL;
-    if (!node || !JSON_NODE_HOLDS_ARRAY(node)) {
+    struct json_value_s *node = json_member(root, "commands");
+    struct json_array_s *array = node ? json_value_as_array(node) : NULL;
+    if (!array) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "commands must be an array of process names");
         goto fail;
     }
-    JsonArray *array = json_node_get_array(node);
-    for (guint i = 0; i < json_array_get_length(array); i++) {
-        JsonNode *element = json_array_get_element(array, i);
-        if (!JSON_NODE_HOLDS_VALUE(element) || json_node_get_value_type(element) != G_TYPE_STRING) {
+    for (struct json_array_element_s *p = array->start; p; p = p->next) {
+        struct json_string_s *string = json_value_as_string(p->value);
+        if (!string) {
             g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "commands must contain strings");
             goto fail;
         }
-        const char *name = json_node_get_string(element);
-        if (!name || !*name || strlen(name) > 15 || strchr(name, '/') || strchr(name, '\n')) {
-            g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "process names must be 1–15 bytes without slashes or newlines");
+        const char *name = string->string;
+        if (!string->string_size || string->string_size > 15 || strlen(name) != string->string_size
+            || strchr(name, '/') || strchr(name, '\n') || !g_utf8_validate(name, string->string_size, NULL)) {
+            g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "process names must be 1–15 bytes without NULs, slashes or newlines");
             goto fail;
         }
         g_hash_table_add(names, g_strdup(name));
     }
-    g_object_unref(parser);
     return names;
 fail:
-    g_object_unref(parser);
     g_hash_table_unref(names);
     return NULL;
+}
+
+static GHashTable *default_commands(void) {
+    GHashTable *names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    /* Include GCC worker processes as well as compiler drivers. */
+    const char *defaults[] = {
+        "rustc", "cargo", "gcc", "g++", "cc", "c++", "cc1", "cc1plus",
+        "clang", "clang++", "zig", "go", "javac", "swiftc", "swift-frontend",
+        "gfortran", "flang", "nvcc", "ghc"
+    };
+    for (guint i = 0; i < G_N_ELEMENTS(defaults); i++)
+        g_hash_table_add(names, g_strdup(defaults[i]));
+    return names;
+}
+
+GHashTable *load_commands(const char *path, GError **error) {
+    /* Use a local error too: callers may pass NULL for their error output. */
+    GError *local_error = NULL;
+    struct json_value_s *root = read_config(path, &local_error);
+    if (!root) {
+        if (g_error_matches(local_error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
+            g_clear_error(&local_error);
+            return default_commands();
+        }
+        g_propagate_error(error, local_error);
+        return NULL;
+    }
+    GHashTable *names = commands_from_json(root, error);
+    free(root);
+    return names;
+}
+
+/* Preserve unrelated fields, including nested values and exact number tokens. */
+static gchar *encode_config(struct json_value_s *root, GHashTable *names) {
+    gchar *commands = json_names(names);
+    GString *output = g_string_new("{\"commands\":");
+    g_string_append(output, commands);
+    g_free(commands);
+    struct json_object_s *object = json_value_as_object(root);
+    for (struct json_object_element_s *p = object->start; p; p = p->next) {
+        if (p->name->string_size == 8 && !memcmp(p->name->string, "commands", 8)) continue;
+        struct json_value_s key = { p->name, json_type_string };
+        char *name = json_write_minified(&key, NULL);
+        char *value = json_write_minified(p->value, NULL);
+        if (!name || !value) g_error("cannot encode JSON configuration");
+        g_string_append_printf(output, ",%s:%s", name, value);
+        free(name);
+        free(value);
+    }
+    g_string_append_c(output, '}');
+    return g_string_free(output, FALSE);
 }
 
 int edit_command(const char *action, const char *name) {
@@ -68,36 +114,25 @@ int edit_command(const char *action, const char *name) {
     gchar *lockpath = g_build_filename(dir, "config.lock", NULL);
     int fd = -1, rc = 1;
     GHashTable *names = NULL;
-    JsonParser *parser = NULL;
-    JsonNode *root = NULL;
-    JsonGenerator *generator = NULL;
+    struct json_value_s *root = NULL;
     gchar *output = NULL;
     if (g_mkdir_with_parents(dir, 0700) != 0 || (fd = open(lockpath, O_CREAT | O_RDWR | O_CLOEXEC, 0600)) < 0 || flock(fd, LOCK_EX) != 0) {
         g_printerr("omapower: config lock: %s\n", g_strerror(errno));
         goto done;
     }
-    names = load_commands(path, &error);
-    if (!names) goto failure;
-    parser = json_parser_new();
-    if (json_parser_load_from_file(parser, path, &error)) {
-        root = json_node_copy(json_parser_get_root(parser));
-    } else if (g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
+    root = read_config(path, &error);
+    if (!root && g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
         g_clear_error(&error);
-        root = json_node_new(JSON_NODE_OBJECT);
-        json_node_take_object(root, json_object_new());
-    } else goto failure;
+        names = default_commands();
+        root = json_parse("{}", 2);
+        if (!root) g_error("cannot allocate JSON configuration");
+    } else if (root) {
+        names = commands_from_json(root, &error);
+    }
+    if (!names) goto failure;
     if (strcmp(action, "--add") == 0) g_hash_table_add(names, g_strdup(name));
     else g_hash_table_remove(names, name);
-    GList *keys = g_hash_table_get_keys(names);
-    keys = g_list_sort(keys, (GCompareFunc)g_strcmp0);
-    JsonArray *array = json_array_new();
-    for (GList *p = keys; p; p = p->next) json_array_add_string_element(array, p->data);
-    g_list_free(keys);
-    json_object_set_array_member(json_node_get_object(root), "commands", array);
-    generator = json_generator_new();
-    json_generator_set_pretty(generator, TRUE);
-    json_generator_set_root(generator, root);
-    output = json_generator_to_data(generator, NULL);
+    output = encode_config(root, names);
     if (!g_file_set_contents(path, output, -1, &error)) goto failure;
     rc = 0;
     goto done;
@@ -106,9 +141,7 @@ failure:
     g_clear_error(&error);
 done:
     g_free(output);
-    if (generator) g_object_unref(generator);
-    if (root) json_node_free(root);
-    if (parser) g_object_unref(parser);
+    free(root);
     if (names) g_hash_table_unref(names);
     if (fd >= 0) close(fd);
     g_free(lockpath); g_free(path); g_free(dir);

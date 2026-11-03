@@ -34,7 +34,7 @@ fi
 exec "$@"
 ''')
         self.tool('make', '''echo "make $*" >> "$CALLS"
-printf '#!/bin/sh\\nexit 0\\n' > "$PROJECT/omapower"
+printf '#!/bin/sh\\nexit 0\\n' > "${OMAPOWER_OUT:-$PROJECT/omapower}"
 ''')
         self.tool('systemctl', 'echo "systemctl $*" >> "$CALLS"\n')
         source = (Path(__file__).resolve().parent.parent / 'setup.sh').read_text()
@@ -60,14 +60,14 @@ printf '#!/bin/sh\\nexit 0\\n' > "$PROJECT/omapower"
         return result.stdout
 
     def test_check_has_no_side_effects(self):
-        self.missing.write_text('json-glib\npower-profiles-daemon\n')
+        self.missing.write_text('glib2\npower-profiles-daemon\n')
         self.assertEqual(json.loads(self.run_setup('--check')),
-                         dict(ready=False, supported=True, missing=['json-glib', 'power-profiles-daemon']))
+                         dict(ready=False, supported=True, missing=['glib2', 'power-profiles-daemon']))
         self.assertFalse(self.log.exists())
         self.assertFalse((self.base / 'data').exists())
 
     def test_auth_cancellation_never_builds(self):
-        self.missing.write_text('json-glib\n')
+        self.missing.write_text('glib2\n')
         self.cancel.touch()
         self.run_setup('--install-deps', 126)
         self.assertNotIn('make ', self.log.read_text())
@@ -75,11 +75,11 @@ printf '#!/bin/sh\\nexit 0\\n' > "$PROJECT/omapower"
         self.assertFalse((self.base / 'data').exists())
 
     def test_install_packages_then_unprivileged_setup(self):
-        self.missing.write_text('json-glib\n')
+        self.missing.write_text('glib2\n')
         self.run_setup('--setup', 1)
         self.assertFalse(self.log.exists())
         self.run_setup('--install-deps')
-        self.assertIn(' -S --needed --noconfirm json-glib', self.log.read_text())
+        self.assertIn(' -S --needed --noconfirm glib2', self.log.read_text())
         self.log.write_text('')
         self.run_setup('--setup')
         calls = self.log.read_text()
@@ -93,6 +93,8 @@ printf '#!/bin/sh\\nexit 0\\n' > "$PROJECT/omapower"
         unit = (self.base / 'config/systemd/user/omapower.service').read_text()
         self.assertIn('ExecStart="' + str(binary).replace('%', '%%').replace('$', '$$') + '"', unit)
         self.assertTrue(json.loads(self.run_setup('--check'))['ready'])
+        # Writing into the plugin checkout makes the shell reload and kill setup.
+        self.assertEqual([p.name for p in self.project.iterdir()], ['setup.sh'])
 
     def test_failed_service_start_stays_retryable(self):
         self.tool('systemctl', 'exit 1\n')

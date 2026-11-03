@@ -18,7 +18,7 @@ The build runs as your user. Setup installs the binary into
 `$XDG_DATA_HOME/omapower/omapower` (normally `~/.local/share/omapower/omapower`),
 writes `$XDG_CONFIG_HOME/systemd/user/omapower.service`, and enables and restarts
 that user service. It replaces an existing Omapower unit at that path.
-Setup requires `base-devel`, `linux-api-headers`, `glib2`, `json-glib`, and
+Setup requires `base-devel`, `linux-api-headers`, `glib2`, and
 `power-profiles-daemon`. The widget also needs Font Awesome 7 Free Solid.
 
 After a plugin update, rebuild the daemon from the installed checkout:
@@ -34,7 +34,7 @@ Plugin updates do not automatically rebuild or replace a running daemon.
 
 ### Manual installation
 
-You'll need Linux, power-profiles-daemon, a system D-Bus, GLib/GIO and JSON-GLib. To build, install a C compiler, Linux headers, make and pkg-config. The optional widget also needs Omarchy/Quickshell and Font Awesome 7 Free Solid.
+You'll need Linux, power-profiles-daemon, a system D-Bus, and GLib/GIO. JSON support is bundled in [`vendor/json.h`](../vendor/README.md); no JSON library package is needed. To build, install a C compiler, Linux headers, make and pkg-config. The optional widget also needs Omarchy/Quickshell and Font Awesome 7 Free Solid.
 
 Build with `make` and keep the repository at a stable path. Create `~/.config/systemd/user/omapower.service`, replacing the path with the absolute path to your built binary:
 
