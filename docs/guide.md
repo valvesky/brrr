@@ -4,6 +4,36 @@
 
 ## Get started
 
+```sh
+omarchy plugin add https://github.com/valvesky/omapower.git --enable
+```
+
+Open the widget and choose **Set up Omapower**, then review and confirm the setup.
+On Arch Linux, missing dependencies are installed with `pkexec /usr/bin/pacman`.
+Omarchy's system authentication prompt handles fingerprint or password authentication
+according to your configuration. Cancellation or failure leaves setup available to retry.
+No authentication is requested when all packages are already installed.
+
+The build runs as your user. Setup installs the binary into
+`$XDG_DATA_HOME/omapower/omapower` (normally `~/.local/share/omapower/omapower`),
+writes `$XDG_CONFIG_HOME/systemd/user/omapower.service`, and enables and restarts
+that user service. It replaces an existing Omapower unit at that path.
+Setup requires `base-devel`, `linux-api-headers`, `glib2`, `json-glib`, and
+`power-profiles-daemon`. The widget also needs Font Awesome 7 Free Solid.
+
+After a plugin update, rebuild the daemon from the installed checkout:
+
+```sh
+cd ~/.config/omarchy/plugins/raw.omapower
+bash setup.sh --install-deps
+bash setup.sh --setup
+```
+
+The first command may request system authentication; the second never runs as root.
+Plugin updates do not automatically rebuild or replace a running daemon.
+
+### Manual installation
+
 You'll need Linux, power-profiles-daemon, a system D-Bus, GLib/GIO and JSON-GLib. To build, install a C compiler, Linux headers, make and pkg-config. The optional widget also needs Omarchy/Quickshell and Font Awesome 7 Free Solid.
 
 Build with `make` and keep the repository at a stable path. Create `~/.config/systemd/user/omapower.service`, replacing the path with the absolute path to your built binary:
@@ -27,17 +57,21 @@ systemctl --user daemon-reload
 systemctl --user enable --now omapower
 ```
 
-For the optional widget, link this repository's `plugin` directory to `~/.config/omarchy/plugins/raw.omapower` (or under `$XDG_CONFIG_HOME` if set), then run `omarchy plugin enable raw.omapower`. Click the widget to manage commands or start and stop the service. The toggle doesn't change whether the service starts at login.
+For the widget, install the repository with `omarchy plugin add` as above, or link the repository root (not its `plugin` directory) to `~/.config/omarchy/plugins/raw.omapower`, then run `omarchy plugin enable raw.omapower`. The widget uses the binary in `$XDG_DATA_HOME/omapower/omapower`; run `bash setup.sh --setup` to install it there on Arch. The service toggle doesn't change whether the service starts at login.
 
-After rebuilding, restart the service and reload the shell/plugin. To uninstall, run `systemctl --user disable --now omapower` and remove the service file and plugin link.
+For daemon-only manual installations, restart the service after rebuilding.
+
+### Uninstall
+
+Run `systemctl --user disable --now omapower`, remove the user service file, and run `systemctl --user daemon-reload`. Remove the plugin with `omarchy plugin remove raw.omapower` and delete `$XDG_DATA_HOME/omapower` (normally `~/.local/share/omapower`) if no longer needed. Your command list remains in `$XDG_CONFIG_HOME/omapower`.
 
 ## Choose commands
 
 Omapower watches `rustc` and `cargo` by default. Add or remove names in the widget, or use:
 
 ```sh
-omapower --add NAME
-omapower --remove NAME
+~/.local/share/omapower/omapower --add NAME
+~/.local/share/omapower/omapower --remove NAME
 ```
 
 Names must match Linux process `comm` names exactly: 1–15 bytes, without slashes or newlines. They are not paths or command-line arguments. The list lives in `$XDG_CONFIG_HOME/omapower/config.json` (normally `~/.config/omapower/config.json`):
@@ -82,5 +116,7 @@ systemctl --user start omapower
 Verbose tracing includes process IDs, matching names, event sources, and pidfd availability, but not command-line arguments. It can be noisy during builds; leave it disabled for normal use. Events still cannot guarantee detection of commands that exit before inspection.
 
 ## Tests
+
+The daemon uses a unity build: `omapower.c` includes `config.c`, `process-watch.c` and `service-watch.c`, with shared declarations in `omapower.h`. Compile only `omapower.c`; `make` tracks all included sources and the header for rebuilds.
 
 Run `make test` for the C, CLI, JavaScript and isolated D-Bus integration tests. These require `jq`, Node.js, `dbus-run-session` and Python with PyGObject (`python-gobject` on Arch; override `PYTHON` if needed). The tests use mock power-profile and systemd services; check the widget in Omarchy separately.

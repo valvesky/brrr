@@ -1,4 +1,4 @@
-#include <gio/gio.h>
+#include "omapower.h"
 #include <glib-unix.h>
 #include <json-glib/json-glib.h>
 #include <signal.h>
@@ -6,9 +6,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "config.h"
-#include "process-watch.h"
-#include "service-watch.h"
+/* Unity build: compile this file only. */
+#include "config.c"
+#include "process-watch.c"
+#include "service-watch.c"
 
 #define DEST "net.hadess.PowerProfiles"
 #define OBJECT "/net/hadess/PowerProfiles"
@@ -31,11 +32,6 @@ typedef struct {
 } App;
 
 static void reconcile(App *app);
-
-static void remove_source(guint *source) {
-    if (*source) g_source_remove(*source);
-    *source = 0;
-}
 
 static void fail(App *app, const char *message) {
     g_printerr("omapower: %s\n", message);
@@ -60,8 +56,11 @@ static gboolean write_status(App *app, GError **error) {
     JsonNode *root = json_builder_get_root(builder);
     gchar *json = json_to_string(root, FALSE);
     gboolean written = !g_strcmp0(json, app->last_status) || g_file_set_contents(app->status, json, -1, error);
-    if (written) { g_free(app->last_status); app->last_status = json; }
-    else g_free(json);
+    if (written) {
+        if (g_strcmp0(json, app->last_status)) g_printerr("omapower: state %s\n", json);
+        g_free(app->last_status);
+        app->last_status = json;
+    } else g_free(json);
     json_node_free(root);
     g_object_unref(builder);
     g_list_free(keys);
@@ -102,11 +101,14 @@ static void call_finished(GObject *connection, GAsyncResult *result, gpointer da
             if (call->operation == ACQUIRING) {
                 g_variant_get(reply, "(u)", &app->cookie);
                 app->holding = !(app->release_seen && app->released_cookie == app->cookie);
+                g_printerr("omapower: hold acquired: cookie=%u retained=%s\n",
+                           app->cookie, app->holding ? "yes" : "no (already released by daemon)");
                 if (!app->holding) {
                     app->cookie = 0;
                     app->suppressed = process_watch_running(app->processes);
                 }
             } else {
+                g_printerr("omapower: hold release confirmed\n");
                 app->holding = FALSE;
                 app->cookie = 0;
                 app->release_failures = 0;
@@ -130,6 +132,9 @@ static void call_finished(GObject *connection, GAsyncResult *result, gpointer da
 }
 
 static void start_call(App *app, Operation operation) {
+    g_printerr("omapower: %s: owner=%s cookie=%u\n",
+               operation == ACQUIRING ? "requesting performance hold" : "releasing performance hold",
+               app->owner, app->cookie);
     app->pending = operation;
     if (operation == ACQUIRING) {
         app->release_seen = FALSE;
@@ -174,6 +179,8 @@ static void processes_changed(ProcessWatch *watch, const GError *error, gpointer
 
 static void owner_changed(App *app, const char *owner) {
     if (app->stopping || !g_strcmp0(app->owner, owner)) return;
+    g_printerr("omapower: power-profiles owner: %s -> %s\n",
+               app->owner ? app->owner : "unavailable", owner ? owner : "unavailable");
     g_free(app->owner);
     app->owner = g_strdup(owner);
     app->generation++;
@@ -210,6 +217,8 @@ static void profile_released(GDBusConnection *connection, const gchar *sender, c
         || !g_variant_is_of_type(parameters, G_VARIANT_TYPE("(u)"))) return;
     guint cookie;
     g_variant_get(parameters, "(u)", &cookie);
+    g_printerr("omapower: ProfileReleased: cookie=%u held-cookie=%u pending=%s\n", cookie, app->cookie,
+               app->pending == ACQUIRING ? "acquire" : app->pending == RELEASING ? "release" : "none");
     if (app->pending == ACQUIRING) {
         app->released_cookie = cookie;
         app->release_seen = TRUE;

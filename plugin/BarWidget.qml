@@ -11,6 +11,15 @@ BarWidget {
     id: root
     moduleName: "raw.omapower"
 
+    property bool setupReady: false
+    property bool setupSupported: false
+    property bool setupBusy: false
+    property bool setupChecking: false
+    property bool setupConfirming: false
+    property var missingPackages: []
+    property string setupError: ""
+    readonly property string setupScript: decodeURIComponent(Qt.resolvedUrl("../setup.sh").toString().replace(/^file:\/\//, ""))
+    property string binaryPath: (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")) + "/omapower/omapower"
     property string serviceState: "unknown"
     readonly property string powerProfile: {
         switch (PowerProfiles.profile) {
@@ -33,8 +42,8 @@ BarWidget {
     property bool actionBusy: false
     readonly property bool opened: panelLoader.item ? panelLoader.item.opened : false
     readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing : false
-    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    readonly property string description: (serviceState === "unknown" ? strings.t("status.unknown")
+    readonly property string description: (!setupReady ? strings.t("setup.required")
+        : serviceState === "unknown" ? strings.t("status.unknown")
         : serviceState === "failed" ? strings.t("status.failed")
         : serviceState !== "active" ? strings.t("status.off")
         : !statusValid ? strings.t("status.starting")
@@ -51,17 +60,18 @@ BarWidget {
         whitelistError = result ? "" : strings.t("whitelist.error")
     }
     function editWhitelist(action, name) {
-        if (whitelistBusy || whitelistError) return false
+        if (!setupReady || setupBusy || whitelistBusy || whitelistError) return false
         if (!Whitelist.validName(name)) { whitelistActionError = strings.t("whitelist.invalid"); return false }
         whitelistActionError = ""
         whitelistBusy = true
-        whitelistAction.command = ["sh", "-c", "d=$(readlink -f -- \"$1\") || exit 1; exec \"$d/../omapower\" \"$2\" \"$3\"", "omapower", root.configHome + "/omarchy/plugins/raw.omapower", action, name]
+        whitelistAction.command = [root.binaryPath, action, name]
         whitelistAction.running = true
         return true
     }
     function open() {
         if (!panelLoader.item) return
-        if (!serviceMonitor.running) { monitorRetry.stop(); serviceMonitor.running = true }
+        if (!setupReady && !setupBusy) checkSetup()
+        if (setupReady && !serviceMonitor.running) { monitorRetry.stop(); serviceMonitor.running = true }
         statusFile.reload()
         panelLoader.item.open()
     }
@@ -75,7 +85,7 @@ BarWidget {
         panelLoader.item.hostWidget = root
     }
     function toggleService() {
-        if (actionBusy || serviceState === "unknown" || serviceState === "activating" || serviceState === "deactivating") return
+        if (!setupReady || setupBusy || actionBusy || serviceState === "unknown" || serviceState === "activating" || serviceState === "deactivating") return
         actionError = ""
         actionBusy = true
         serviceAction.command = ["systemctl", "--user", serviceState === "active" ? "stop" : "start", "omapower.service"]
@@ -89,7 +99,65 @@ BarWidget {
         if (serviceState === "active") statusFile.reload()
         else statusValid = false
     }
-    Component.onCompleted: serviceMonitor.running = true
+    Component.onCompleted: checkSetup()
+
+    function checkSetup() {
+        if (setupCheck.running) return
+        setupChecking = true
+        setupCheck.running = true
+    }
+    function requestSetup() {
+        if (setupBusy || setupChecking) return
+        setupError = ""
+        setupConfirming = true
+    }
+    function confirmSetup() {
+        if (setupBusy || !setupSupported) return
+        setupConfirming = false
+        setupBusy = true
+        setupError = ""
+        setupAction.command = ["bash", setupScript, missingPackages.length ? "--install-deps" : "--setup"]
+        setupAction.running = true
+    }
+
+    Process {
+        id: setupCheck
+        command: ["bash", root.setupScript, "--check"]
+        stdout: StdioCollector { id: setupOutput }
+        onExited: function(code) {
+            root.setupChecking = false
+            try {
+                if (code !== 0) throw new Error("setup check failed")
+                const state = JSON.parse(setupOutput.text)
+                if (typeof state.ready !== "boolean" || typeof state.supported !== "boolean" || !Array.isArray(state.missing))
+                    throw new Error("invalid setup state")
+                root.setupReady = state.ready
+                root.setupSupported = state.supported
+                root.missingPackages = state.missing
+                if (root.setupReady && !serviceMonitor.running) serviceMonitor.running = true
+            } catch (e) { root.setupError = strings.t("setup.checkFailed") }
+        }
+    }
+    Process {
+        id: setupAction
+        stderr: SplitParser { onRead: function(data) { console.warn("Omapower setup: " + data) } }
+        onExited: function(code) {
+            if (code === 0 && command[2] === "--install-deps") {
+                command = ["bash", root.setupScript, "--setup"]
+                running = true
+                return
+            }
+            root.setupBusy = false
+            if (code === 0) {
+                // A rebuilt binary needs a fresh monitor as well as a restarted service.
+                monitorRetry.stop()
+                serviceMonitor.running = false
+                root.checkSetup()
+            } else {
+                root.setupError = strings.t("setup.failed")
+            }
+        }
+    }
 
     Loader {
         id: panelLoader
@@ -114,7 +182,7 @@ BarWidget {
 
     Process {
         id: serviceMonitor
-        command: ["sh", "-c", "d=$(readlink -f -- \"$1\") || exit 1; exec \"$d/../omapower\" --watch-widget", "omapower", root.configHome + "/omarchy/plugins/raw.omapower"]
+        command: [root.binaryPath, "--watch-widget"]
         stdout: SplitParser {
             onRead: function(data) {
                 try {
@@ -124,10 +192,10 @@ BarWidget {
                 } catch (e) { root.serviceState = "unknown" }
             }
         }
-        onExited: { root.serviceState = "unknown"; monitorRetry.restart() }
+        onExited: { root.serviceState = "unknown"; if (root.setupReady && !root.setupBusy) monitorRetry.restart() }
     }
     // Recovery only: no timer runs while the D-Bus monitor is healthy.
-    Timer { id: monitorRetry; interval: 5000; repeat: false; onTriggered: serviceMonitor.running = true }
+    Timer { id: monitorRetry; interval: 5000; repeat: false; onTriggered: if (root.setupReady && !root.setupBusy) serviceMonitor.running = true }
     Process {
         id: serviceAction
         onExited: function(code) {

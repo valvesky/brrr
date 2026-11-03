@@ -1,4 +1,4 @@
-#include "config.h"
+#include "omapower.h"
 
 #include <json-glib/json-glib.h>
 #include <errno.h>

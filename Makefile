@@ -7,15 +7,15 @@ CPPFLAGS += $(shell pkg-config --cflags $(PKGS))
 LDLIBS += $(shell pkg-config --libs $(PKGS))
 
 SOURCES = omapower.c config.c process-watch.c service-watch.c
-HEADERS = config.h process-watch.h service-watch.h
+HEADERS = omapower.h
 
 omapower: $(SOURCES) $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES) $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ omapower.c $(LDLIBS)
 
-tests/test_config: tests/test_config.c config.c config.h
+tests/test_config: tests/test_config.c config.c $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< config.c $(LDLIBS)
 
-tests/test_process: tests/test_process.c process-watch.c process-watch.h
+tests/test_process: tests/test_process.c process-watch.c $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
 
 .PHONY: test clean
@@ -24,6 +24,7 @@ test: omapower tests/test_config tests/test_process
 	./tests/test_process
 	sh tests/test_edit.sh
 	$(NODE) tests/test_whitelist.js
+	$(PYTHON) tests/test_setup.py
 	dbus-run-session -- $(PYTHON) tests/test_daemon.py ./omapower
 
 clean:

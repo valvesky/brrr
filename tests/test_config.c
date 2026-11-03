@@ -1,5 +1,5 @@
 #include <glib/gstdio.h>
-#include "../config.h"
+#include "../omapower.h"
 
 static void test_config(void) {
     GError *error = NULL;

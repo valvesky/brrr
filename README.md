@@ -13,14 +13,12 @@
 ## Install
 
 ```sh
-git clone https://github.com/valvesky/omapower.git
-cd omapower
-make
+omarchy plugin add https://github.com/valvesky/omapower.git --enable
 ```
 
-Requires Linux, power-profiles-daemon, GLib/GIO and JSON-GLib, plus a C compiler, Linux headers, make and pkg-config to build. The optional bar widget requires Omarchy with Quickshell plugin support and Font Awesome 7 Free Solid.
+Requires Omarchy with Quickshell plugin support. Click the widget and choose **Set up Omapower** to build and enable the daemon. Missing system packages require administrator authentication; the build and user service do not.
 
-Follow the [setup guide](docs/guide.md#get-started) to enable the user service and add the widget.
+See the [setup guide](docs/guide.md#get-started) for details and manual installation.
 
 ## About
 

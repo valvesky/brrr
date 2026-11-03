@@ -1,3 +1,4 @@
+#define G_LOG_DOMAIN "omapower"
 #include <gio/gio.h>
 #include <sys/socket.h>
 #include <sys/prctl.h>
@@ -9,9 +10,19 @@ static int test_socket(int domain, int type, int protocol) {
     if (deny_socket && domain == AF_NETLINK) { errno = EPERM; return -1; }
     return socket(domain, type, protocol);
 }
+static int receive_errors;
+static ssize_t test_recvmsg(int fd, struct msghdr *message, int flags) {
+    if (receive_errors) {
+        errno = receive_errors-- == 2 ? ENOBUFS : EAGAIN;
+        return -1;
+    }
+    return recvmsg(fd, message, flags);
+}
 #define socket(domain, type, protocol) test_socket(domain, type, protocol)
+#define recvmsg(fd, message, flags) test_recvmsg(fd, message, flags)
 #include "../process-watch.c"
 #undef socket
+#undef recvmsg
 
 static void changed(ProcessWatch *watch, const GError *error, gpointer data) {
     (void)watch; (void)data;
@@ -40,7 +51,7 @@ static void test_identity_and_threads(void) {
     g_assert_cmpuint(process->start, >, 0);
     guint64 start = process->start;
     process->start = 0; /* a stale PID incarnation must be replaced */
-    refresh_pid(watch, getpid());
+    refresh_pid(watch, getpid(), "test");
     process = g_hash_table_lookup(watch->processes, GINT_TO_POINTER(getpid()));
     g_assert_cmpuint(process->start, ==, start);
     struct proc_event event = { .what = PROC_EVENT_EXIT };
@@ -119,6 +130,88 @@ static void test_subscription_timeout(void) {
     process_watch_free(watch);
 }
 
+static void test_stream_overflow_recovery(void) {
+    char previous[16];
+    g_assert_cmpint(prctl(PR_GET_NAME, previous), ==, 0);
+    g_assert_cmpint(prctl(PR_SET_NAME, "oma_overflow"), ==, 0);
+    ProcessWatch *watch = new_watch("oma_overflow");
+    watch->mode = "events";
+    g_hash_table_remove_all(watch->processes);
+    receive_errors = 2;
+    g_assert_true(socket_ready(-1, G_IO_IN, watch));
+    g_assert_true(process_watch_running(watch));
+    g_assert_cmpuint(watch->stream_recoveries, ==, 1);
+    gint64 logged = watch->last_recovery_log;
+    g_assert_cmpint(logged, >, 0);
+    /* A rate-limited notice must not suppress the actual repair scan. */
+    g_hash_table_remove_all(watch->processes);
+    receive_errors = 2;
+    g_assert_true(socket_ready(-1, G_IO_IN, watch));
+    g_assert_true(process_watch_running(watch));
+    g_assert_cmpuint(watch->stream_recoveries, ==, 2);
+    g_assert_cmpint(watch->last_recovery_log, ==, logged);
+    process_watch_free(watch);
+    g_assert_cmpint(prctl(PR_SET_NAME, previous), ==, 0);
+}
+
+static void test_dropped_events(void) {
+    char previous[16];
+    g_assert_cmpint(prctl(PR_GET_NAME, previous), ==, 0);
+    GHashTable *commands = g_hash_table_new(g_str_hash, g_str_equal);
+    g_hash_table_add(commands, "oma_lost_event");
+    GError *error = NULL;
+    ProcessWatch *watch = process_watch_new(commands, FALSE, changed, NULL, &error);
+    g_hash_table_unref(commands);
+    g_assert_no_error(error);
+    g_assert_nonnull(watch);
+    gint64 deadline = g_get_monotonic_time() + 3 * G_TIME_SPAN_SECOND;
+    while (!strcmp(process_watch_mode(watch), "connecting") && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, FALSE);
+        g_usleep(1000);
+    }
+    if (strcmp(process_watch_mode(watch), "events")) {
+        g_test_skip("proc connector unavailable; event recovery needs an event subscription");
+        process_watch_free(watch);
+        return;
+    }
+    /* First prove events work before the slower recovery timer can fire. */
+    g_assert_cmpint(prctl(PR_SET_NAME, "oma_lost_event"), ==, 0);
+    deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+    while (!process_watch_running(watch) && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, FALSE);
+        g_usleep(1000);
+    }
+    g_assert_true(process_watch_running(watch));
+    g_assert_cmpint(prctl(PR_SET_NAME, previous), ==, 0);
+    deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+    while (process_watch_running(watch) && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, FALSE);
+        g_usleep(1000);
+    }
+    g_assert_false(process_watch_running(watch));
+    guint64 before = watch->changes;
+    /* Drop all event delivery, without switching to polling fallback. */
+    remove_source(&watch->socket_source);
+    g_assert_false(process_watch_running(watch));
+    g_assert_cmpint(prctl(PR_SET_NAME, "oma_lost_event"), ==, 0);
+    deadline = g_get_monotonic_time() + (RECONCILE_MS + 2000) * G_TIME_SPAN_MILLISECOND;
+    while (!process_watch_running(watch) && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, FALSE);
+        g_usleep(1000);
+    }
+    g_assert_true(process_watch_running(watch));
+    g_assert_cmpint(prctl(PR_SET_NAME, previous), ==, 0);
+    deadline = g_get_monotonic_time() + (RECONCILE_MS + 2000) * G_TIME_SPAN_MILLISECOND;
+    while (process_watch_running(watch) && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, FALSE);
+        g_usleep(1000);
+    }
+    g_assert_false(process_watch_running(watch));
+    g_assert_cmpuint(watch->changes, ==, before + 2);
+    g_assert_cmpstr(process_watch_mode(watch), ==, "events");
+    process_watch_free(watch);
+}
+
 static void *group_worker(void *data) {
     (void)data;
     char byte;
@@ -139,5 +232,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/process/denied-connector", test_denied_connector);
     g_test_add_func("/process/packets-and-acknowledgements", test_packets_and_acknowledgements);
     g_test_add_func("/process/subscription-timeout", test_subscription_timeout);
+    g_test_add_func("/process/dropped-events", test_dropped_events);
+    g_test_add_func("/process/stream-overflow-recovery", test_stream_overflow_recovery);
     return g_test_run();
 }

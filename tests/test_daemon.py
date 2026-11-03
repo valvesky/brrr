@@ -300,6 +300,57 @@ class Lifecycle(unittest.TestCase):
         self.exit_child(second)
         self.released(daemon)
 
+    def test_overlapping_distinct_commands(self):
+        for poll in (False, True):
+            with self.subTest(poll=poll):
+                names = (COMM, 'oma_other_test', 'oma_third_test')
+                daemon = self.start(names, poll=poll)
+                initial_holds = self.profiles.hold_calls
+                initial_releases = self.profiles.release_calls
+                children = []
+                for name in names:
+                    children.append(self.child(name))
+                    until(lambda name=name: name in daemon.state()['active'])
+                    self.held(daemon)
+                self.assertEqual(self.profiles.hold_calls, initial_holds + 1)
+                # Exit out of launch order; neither an exit nor a new match
+                # should release or duplicate the shared performance hold.
+                for index in (1, 0):
+                    self.exit_child(children[index])
+                    until(lambda index=index: names[index] not in daemon.state()['active'])
+                    self.assertTrue(daemon.state()['holding'])
+                    self.assertEqual(self.profiles.release_calls, initial_releases)
+                replacement = self.child(names[0])
+                until(lambda: names[0] in daemon.state()['active'])
+                self.exit_child(children[2])
+                until(lambda: names[2] not in daemon.state()['active'])
+                self.assertTrue(daemon.state()['holding'])
+                self.assertEqual(self.profiles.hold_calls, initial_holds + 1)
+                self.exit_child(replacement)
+                self.released(daemon)
+                self.assertEqual(self.profiles.release_calls, initial_releases + 1)
+                daemon.close()
+                self.daemons.remove(daemon)
+
+    def test_diagnostics_explain_hold_and_suppression(self):
+        daemon = self.start()
+        first = self.child()
+        self.held(daemon)
+        self.profiles.manual_release()
+        until(lambda: daemon.state()['suppressed'])
+        self.exit_child(first)
+        until(lambda: not daemon.state()['suppressed'])
+        second = self.child()
+        self.held(daemon)
+        self.exit_child(second)
+        self.released(daemon)
+        daemon.close()
+        self.daemons.remove(daemon)
+        for diagnostic in ('power-profiles owner:', 'requesting performance hold',
+                           'hold acquired:', 'ProfileReleased:', '"suppressed":true',
+                           'releasing performance hold', 'hold release confirmed'):
+            self.assertIn(diagnostic, daemon.log)
+
     def test_rename_exec_and_thread_names(self):
         daemon = self.start()
         if daemon.state()['monitor'] != 'events':
@@ -628,6 +679,18 @@ class WidgetSmoke(unittest.TestCase):
         project = Path(__file__).resolve().parent.parent
         for name in ('BarWidget.qml', 'Whitelist.js'):
             shutil.copyfile(project / 'plugin' / name, plugin / name)
+        # Exercise the real QML flow without installing packages or touching systemd.
+        (shell / 'setup.sh').write_text('''#!/bin/bash
+case "$1" in
+  --check) cat "$OMAPOWER_SETUP_STATE" ;;
+  --install-deps) echo deps >> "$OMAPOWER_SETUP_LOG"; [[ ! -e $OMAPOWER_SETUP_CANCEL ]] || exit 126 ;;
+  --setup) echo setup >> "$OMAPOWER_SETUP_LOG"; printf '{"ready":true,"supported":true,"missing":[]}' > "$OMAPOWER_SETUP_STATE" ;;
+esac
+''')
+        self.setup_state = base / 'setup.json'
+        self.setup_state.write_text('{"ready":true,"supported":true,"missing":[]}')
+        self.setup_log = base / 'setup.log'
+        self.setup_cancel = base / 'cancel-auth'
         stubs = {
             'Ui/qmldir': 'module qs.Ui\nBarWidget 1.0 BarWidget.qml\nWidgetButton 1.0 WidgetButton.qml\n',
             'Ui/BarWidget.qml': 'import QtQuick\nItem { property string moduleName; property var bar: null }',
@@ -662,11 +725,13 @@ import Quickshell
 import Quickshell.Io
 import "./plugin" as Plugin
 ShellRoot {
-    Plugin.BarWidget { id: widget }
+    Plugin.BarWidget { id: widget; binaryPath: OMAPOWER_BINARY }
     property string snapshot: JSON.stringify({
         commands: widget.commands, error: widget.whitelistError,
         service: widget.serviceState, holding: widget.holding,
-        valid: widget.statusValid, busy: widget.whitelistBusy
+        valid: widget.statusValid, busy: widget.whitelistBusy,
+        ready: widget.setupReady, setupBusy: widget.setupBusy, setupError: widget.setupError,
+        confirming: widget.setupConfirming, checking: widget.setupChecking, missing: widget.missingPackages
     })
     onSnapshotChanged: console.log("OMAPOWER_WIDGET " + snapshot)
     FileView {
@@ -676,6 +741,10 @@ ShellRoot {
         onLoaded: {
             const command = JSON.parse(text())
             if (command.add) widget.editWhitelist("--add", command.add)
+            if (command.check) widget.checkSetup()
+            if (command.request) widget.requestSetup()
+            if (command.confirm) widget.confirmSetup()
+            if (command.cancel) widget.setupConfirming = false
         }
     }
     Timer { interval: 12000; running: true; onTriggered: Qt.quit() }
@@ -684,7 +753,7 @@ ShellRoot {
         for name, text in stubs.items():
             path = shell / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
+            path.write_text(text.replace('OMAPOWER_BINARY', json.dumps(BINARY)))
         link = self.config_home / 'omarchy' / 'plugins' / 'raw.omapower'
         link.parent.mkdir(parents=True)
         link.symlink_to(project / 'plugin')
@@ -692,7 +761,9 @@ ShellRoot {
         self.control.write_text('{}')
         env = dict(os.environ, QT_QPA_PLATFORM='offscreen', DBUS_SYSTEM_BUS_ADDRESS=ADDRESS,
             XDG_CONFIG_HOME=str(self.config_home), XDG_RUNTIME_DIR=str(self.runtime),
-            XDG_STATE_HOME=str(base / 'state'), OMAPOWER_CONTROL=str(self.control), GIO_USE_VFS='local')
+            XDG_STATE_HOME=str(base / 'state'), OMAPOWER_CONTROL=str(self.control), GIO_USE_VFS='local',
+            OMAPOWER_SETUP_STATE=str(self.setup_state), OMAPOWER_SETUP_LOG=str(self.setup_log),
+            OMAPOWER_SETUP_CANCEL=str(self.setup_cancel))
         env.pop('WAYLAND_DISPLAY', None)
         self.process = subprocess.Popen(['quickshell', '--no-color', '--path', str(shell / 'shell.qml')],
             env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -729,6 +800,48 @@ ShellRoot {
         except AssertionError:
             self.read_snapshot()
             self.fail(self.output)
+
+    def send_control(self, command):
+        temporary = self.control.with_suffix('.tmp')
+        temporary.write_text(json.dumps(command))
+        temporary.replace(self.control)
+
+    def test_setup_cancel_auth_failure_and_retry(self):
+        self.setup_cancel.touch()
+        self.wait(lambda state: state.get('ready') is True)
+        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["json-glib"]}')
+        self.send_control(dict(check=True))
+        self.wait(lambda state: state.get('ready') is False and not state.get('checking'))
+        self.send_control(dict(request=True))
+        self.wait(lambda state: state.get('confirming') is True)
+        self.send_control(dict(cancel=True))
+        self.wait(lambda state: state.get('confirming') is False)
+        self.assertFalse(self.setup_log.exists())
+        self.send_control(dict(request=True))
+        self.wait(lambda state: state.get('confirming') is True)
+        self.send_control(dict(confirm=True))
+        self.wait(lambda state: bool(state.get('setupError')) and not state.get('setupBusy'))
+        self.assertEqual(self.setup_log.read_text(), 'deps\n')
+        self.setup_state.write_text('{"ready":false,"supported":true,"missing":[]}')
+        self.send_control(dict(check=True))
+        self.wait(lambda state: state.get('missing') == [] and not state.get('checking'))
+        self.send_control(dict(request=True))
+        self.wait(lambda state: state.get('confirming') is True)
+        self.send_control(dict(confirm=True))
+        self.wait(lambda state: state.get('ready') is True and not state.get('setupBusy'))
+        self.assertEqual(self.setup_log.read_text(), 'deps\nsetup\n')
+
+    def test_setup_with_successful_auth_runs_build_then_refreshes(self):
+        self.wait(lambda state: state.get('ready') is True)
+        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["json-glib"]}')
+        self.send_control(dict(check=True))
+        self.wait(lambda state: state.get('ready') is False and not state.get('checking'))
+        self.send_control(dict(request=True))
+        self.wait(lambda state: state.get('confirming') is True)
+        self.send_control(dict(confirm=True))
+        self.wait(lambda state: state.get('ready') is True and not state.get('setupBusy'))
+        self.assertEqual(self.setup_log.read_text(), 'deps\nsetup\n')
+        self.assertFalse(self.snapshot.get('setupError'))
 
     def test_widget_updates_without_periodic_queries(self):
         self.wait(lambda state: state.get('service') == 'inactive' and state.get('commands') == ['cargo', 'rustc'])

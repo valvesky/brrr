@@ -21,5 +21,16 @@
   "whitelist.placeholder": "Process name",
   "whitelist.save": "Add",
   "whitelist.invalid": "Use a process name of 1–15 bytes, without slashes or newlines.",
-  "whitelist.saveFailed": "Could not save the whitelist. Check the configuration and permissions."
+  "whitelist.saveFailed": "Could not save the whitelist. Check the configuration and permissions.",
+  "setup.required": "Setup required",
+  "setup.intro": "Set up the daemon to watch commands automatically. This builds Omapower and enables its user service at login, replacing any existing Omapower service definition.",
+  "setup.button": "Set up Omapower",
+  "setup.busy": "Setting up Omapower… Complete the system authentication prompt if shown.",
+  "setup.packages": "Install missing system packages: %1. This requires administrator authentication (fingerprint or password). Then build Omapower as your user and enable its user service.",
+  "setup.userOnly": "Dependencies are installed. Build Omapower as your user and enable its user service at login? No administrator permission is needed.",
+  "setup.confirm": "Continue",
+  "setup.cancel": "Cancel",
+  "setup.failed": "Setup failed or authentication was cancelled. You can retry. For details, run bash setup.sh --setup from the repository or check the shell journal.",
+  "setup.checkFailed": "Could not check setup. Reopen the panel to retry.",
+  "setup.unsupported": "Automatic setup requires Arch Linux with pacman. See the setup guide for manual installation."
 }

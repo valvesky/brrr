@@ -1,5 +1,4 @@
-#include "service-watch.h"
-#include "config.h"
+#include "omapower.h"
 
 #include <json-glib/json-glib.h>
 
@@ -40,7 +39,7 @@ static void emit_state(ServiceWatch *watch, const char *state) {
     }
 }
 
-static void config_changed(const char *path, const GError *monitor_error, gpointer data) {
+static void service_config_changed(const char *path, const GError *monitor_error, gpointer data) {
     ServiceWatch *watch = data;
     if (monitor_error) {
         g_printerr("omapower: widget monitor: %s\n", monitor_error->message);
@@ -124,7 +123,7 @@ static void refresh(ServiceWatch *watch, gboolean load) {
     g_variant_unref(reply);
 }
 
-static void appeared(GDBusConnection *connection, const gchar *name, const gchar *owner, gpointer data) {
+static void service_appeared(GDBusConnection *connection, const gchar *name, const gchar *owner, gpointer data) {
     (void)connection; (void)name;
     ServiceWatch *watch = data;
     g_free(watch->owner);
@@ -140,7 +139,7 @@ static void appeared(GDBusConnection *connection, const gchar *name, const gchar
     refresh(watch, TRUE);
 }
 
-static void vanished(GDBusConnection *connection, const gchar *name, gpointer data) {
+static void service_vanished(GDBusConnection *connection, const gchar *name, gpointer data) {
     (void)connection; (void)name;
     ServiceWatch *watch = data;
     g_clear_pointer(&watch->owner, g_free);
@@ -149,7 +148,7 @@ static void vanished(GDBusConnection *connection, const gchar *name, gpointer da
     emit_state(watch, "unknown");
 }
 
-static void changed(GDBusConnection *connection, const gchar *sender, const gchar *path,
+static void service_changed(GDBusConnection *connection, const gchar *sender, const gchar *path,
                     const gchar *interface, const gchar *member, GVariant *parameters, gpointer data) {
     (void)connection;
     ServiceWatch *watch = data;
@@ -173,7 +172,7 @@ static void changed(GDBusConnection *connection, const gchar *sender, const gcha
     }
 }
 
-static gboolean stop(gpointer data) {
+static gboolean service_stop(gpointer data) {
     g_main_loop_quit(((ServiceWatch *)data)->loop);
     return G_SOURCE_CONTINUE;
 }
@@ -192,7 +191,7 @@ int watch_widget(void) {
     watch.loop = g_main_loop_new(NULL, FALSE);
     GError *error = NULL;
     gchar *config_path = g_build_filename(g_get_user_config_dir(), "omapower", "config.json", NULL);
-    watch.config = config_watch_new(config_path, config_changed, &watch, &error);
+    watch.config = config_watch_new(config_path, service_config_changed, &watch, &error);
     if (watch.config) watch.bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
     if (!watch.bus) {
         g_printerr("omapower: service monitor: %s\n", error->message);
@@ -205,15 +204,15 @@ int watch_widget(void) {
     g_dbus_connection_set_exit_on_close(watch.bus, FALSE);
     g_signal_connect(watch.bus, "closed", G_CALLBACK(closed), &watch);
     guint properties = g_dbus_connection_signal_subscribe(watch.bus, SYSTEMD, "org.freedesktop.DBus.Properties",
-        "PropertiesChanged", NULL, UNIT_INTERFACE, G_DBUS_SIGNAL_FLAGS_NONE, changed, &watch, NULL);
+        "PropertiesChanged", NULL, UNIT_INTERFACE, G_DBUS_SIGNAL_FLAGS_NONE, service_changed, &watch, NULL);
     guint manager = g_dbus_connection_signal_subscribe(watch.bus, SYSTEMD, SYSTEMD ".Manager",
-        NULL, MANAGER, NULL, G_DBUS_SIGNAL_FLAGS_NONE, changed, &watch, NULL);
+        NULL, MANAGER, NULL, G_DBUS_SIGNAL_FLAGS_NONE, service_changed, &watch, NULL);
     guint name = g_bus_watch_name_on_connection(watch.bus, SYSTEMD, G_BUS_NAME_WATCHER_FLAGS_NONE,
-                                               appeared, vanished, &watch, NULL);
-    guint term = g_unix_signal_add(SIGTERM, stop, &watch);
-    guint interrupt = g_unix_signal_add(SIGINT, stop, &watch);
+                                               service_appeared, service_vanished, &watch, NULL);
+    guint term = g_unix_signal_add(SIGTERM, service_stop, &watch);
+    guint interrupt = g_unix_signal_add(SIGINT, service_stop, &watch);
     emit_state(&watch, "unknown");
-    config_changed(config_path, NULL, &watch);
+    service_config_changed(config_path, NULL, &watch);
     g_free(config_path);
     if (!watch.exit_status) g_main_loop_run(watch.loop);
     watch.stopping = TRUE;

@@ -1,4 +1,4 @@
-#include "process-watch.h"
+#include "omapower.h"
 
 #include <glib-unix.h>
 #include <dirent.h>
@@ -16,7 +16,8 @@
 #include <unistd.h>
 
 #define FALLBACK_MS 500
-#define RECONCILE_SECONDS 60
+/* Kernel events are primary; a slower audit repairs silent event loss. */
+#define RECONCILE_MS 5000
 
 typedef struct {
     ProcessWatch *watch;
@@ -36,14 +37,11 @@ struct ProcessWatch {
     guint socket_source, ack_source, scan_source, notify_source;
     gboolean acknowledged;
     guint32 ack_token;
+    guint64 changes, events, stream_recoveries;
+    gint64 last_recovery_log;
     const char *mode;
     GError *error;
 };
-
-static void remove_source(guint *source) {
-    if (*source) g_source_remove(*source);
-    *source = 0;
-}
 
 static gboolean notify_changed(gpointer data) {
     ProcessWatch *watch = data;
@@ -65,14 +63,23 @@ static void tracked_free(gpointer data) {
     g_free(process);
 }
 
+static gboolean remove_process(ProcessWatch *watch, pid_t pid, const char *source) {
+    TrackedProcess *process = g_hash_table_lookup(watch->processes, GINT_TO_POINTER(pid));
+    if (!process) return FALSE;
+    g_debug("process unmatched: pid=%d name=%s source=%s", pid, process->name, source);
+    g_hash_table_remove(watch->processes, GINT_TO_POINTER(pid));
+    watch->changes++;
+    notify(watch);
+    return TRUE;
+}
+
 static gboolean process_exited(gint fd, GIOCondition condition, gpointer data) {
     (void)fd; (void)condition;
     TrackedProcess *process = data;
     ProcessWatch *watch = process->watch;
     pid_t pid = process->pid;
     process->source = 0;
-    g_hash_table_remove(watch->processes, GINT_TO_POINTER(pid));
-    notify(watch);
+    remove_process(watch, pid, "pidfd");
     return G_SOURCE_REMOVE;
 }
 
@@ -134,13 +141,16 @@ static gboolean process_info(ProcessWatch *watch, pid_t pid, char name[32], guin
     return errno == 0 && end != tail && (*end == ' ' || *end == '\n' || !*end);
 }
 
-static void refresh_pid(ProcessWatch *watch, pid_t pid) {
+static void refresh_pid(ProcessWatch *watch, pid_t pid, const char *source) {
     if (pid <= 0 || !g_hash_table_size(watch->commands)) return;
     char name[32];
     guint64 start;
     TrackedProcess *old = g_hash_table_lookup(watch->processes, GINT_TO_POINTER(pid));
-    if (!process_info(watch, pid, name, &start)) {
-        if (g_hash_table_remove(watch->processes, GINT_TO_POINTER(pid))) notify(watch);
+    gboolean matches = process_info(watch, pid, name, &start);
+    if (g_str_has_prefix(source, "event:"))
+        g_debug("process event: pid=%d source=%s matched=%s", pid, source, matches ? "yes" : "no");
+    if (!matches) {
+        remove_process(watch, pid, source);
         return;
     }
     if (old && old->start == start && !strcmp(old->name, name)) return;
@@ -161,19 +171,24 @@ static void refresh_pid(ProcessWatch *watch, pid_t pid) {
         if (poll(&pfd, 1, 0) != 0 || !process_info(watch, pid, current_name, &current_start)
             || current_start != start || strcmp(name, current_name)) {
             tracked_free(process);
-            if (g_hash_table_remove(watch->processes, GINT_TO_POINTER(pid))) notify(watch);
+            remove_process(watch, pid, source);
             return;
         }
         process->source = g_unix_fd_add(process->pidfd, G_IO_IN | G_IO_HUP | G_IO_ERR,
                                        process_exited, process);
     }
+    g_debug("process matched: pid=%d name=%s start=%" G_GUINT64_FORMAT " source=%s pidfd=%s",
+            pid, name, start, source, process->pidfd >= 0 ? "yes" : "no");
     g_hash_table_replace(watch->processes, GINT_TO_POINTER(pid), process);
+    watch->changes++;
     notify(watch);
 }
 
-static gboolean scan(ProcessWatch *watch, GError **error) {
+static gboolean scan(ProcessWatch *watch, GError **error, const char *source) {
     if (!g_hash_table_size(watch->commands)) {
         if (g_hash_table_size(watch->processes)) {
+            watch->changes += g_hash_table_size(watch->processes);
+            g_debug("process matches cleared: source=%s", source);
             g_hash_table_remove_all(watch->processes);
             notify(watch);
         }
@@ -196,7 +211,7 @@ static gboolean scan(ProcessWatch *watch, GError **error) {
         if (*end || number <= 0 || number > G_MAXINT) continue;
         pid_t pid = (pid_t)number;
         g_hash_table_add(seen, GINT_TO_POINTER(pid));
-        refresh_pid(watch, pid);
+        refresh_pid(watch, pid, source);
     }
     closedir(proc);
     if (!saved_errno) {
@@ -204,7 +219,12 @@ static gboolean scan(ProcessWatch *watch, GError **error) {
         gpointer key;
         g_hash_table_iter_init(&iter, watch->processes);
         while (g_hash_table_iter_next(&iter, &key, NULL)) {
-            if (!g_hash_table_contains(seen, key)) { g_hash_table_iter_remove(&iter); notify(watch); }
+            if (!g_hash_table_contains(seen, key)) {
+                g_debug("process unmatched: pid=%d source=%s", GPOINTER_TO_INT(key), source);
+                g_hash_table_iter_remove(&iter);
+                watch->changes++;
+                notify(watch);
+            }
         }
     }
     g_hash_table_unref(seen);
@@ -215,11 +235,17 @@ static gboolean scan(ProcessWatch *watch, GError **error) {
 
 static gboolean rescan(gpointer data) {
     ProcessWatch *watch = data;
-    if (!scan(watch, &watch->error)) {
+    guint64 before = watch->changes;
+    gboolean events = !strcmp(watch->mode, "events");
+    if (!scan(watch, &watch->error, events ? "recovery" : "poll")) {
         watch->scan_source = 0;
         notify(watch);
         return G_SOURCE_REMOVE;
     }
+    if (events && watch->changes != before)
+        g_printerr("omapower: recovery scan corrected %" G_GUINT64_FORMAT
+                   " process match changes; events received=%" G_GUINT64_FORMAT "\n",
+                   watch->changes - before, watch->events);
     return G_SOURCE_CONTINUE;
 }
 
@@ -252,7 +278,7 @@ static void fallback(ProcessWatch *watch, const char *reason) {
     remove_source(&watch->scan_source);
     watch->mode = "polling";
     watch->scan_source = g_timeout_add(FALLBACK_MS, rescan, watch);
-    if (!scan(watch, &watch->error)) notify(watch);
+    if (!scan(watch, &watch->error, "fallback")) notify(watch);
     notify(watch);
 }
 
@@ -266,6 +292,7 @@ static gboolean ack_timeout(gpointer data) {
 /* Process connector messages are best-effort. Never trust user-sent netlink
  * messages, truncated packets, or a thread's comm as the leader's name. */
 static void handle_event(ProcessWatch *watch, const struct proc_event *event) {
+    if (event->what != PROC_EVENT_NONE) watch->events++;
     switch (event->what) {
     case PROC_EVENT_NONE:
         if (event->event_data.ack.err) {
@@ -274,27 +301,28 @@ static void handle_event(ProcessWatch *watch, const struct proc_event *event) {
             watch->acknowledged = TRUE;
             remove_source(&watch->ack_source);
             watch->mode = "events";
+            g_printerr("omapower: process events subscribed; recovery scan every %d ms\n", RECONCILE_MS);
             notify(watch);
         }
         break;
     case PROC_EVENT_FORK:
         if (event->event_data.fork.child_pid == event->event_data.fork.child_tgid)
-            refresh_pid(watch, event->event_data.fork.child_tgid);
+            refresh_pid(watch, event->event_data.fork.child_tgid, "event:fork");
         break;
     case PROC_EVENT_EXEC:
-        refresh_pid(watch, event->event_data.exec.process_tgid);
+        refresh_pid(watch, event->event_data.exec.process_tgid, "event:exec");
         break;
     case PROC_EVENT_UID:
-        refresh_pid(watch, event->event_data.id.process_tgid);
+        refresh_pid(watch, event->event_data.id.process_tgid, "event:uid");
         break;
     case PROC_EVENT_COMM:
         if (event->event_data.comm.process_pid == event->event_data.comm.process_tgid)
-            refresh_pid(watch, event->event_data.comm.process_tgid);
+            refresh_pid(watch, event->event_data.comm.process_tgid, "event:comm");
         break;
     case PROC_EVENT_EXIT:
         /* Refresh rather than blindly remove: a queued exit may belong to an
          * older PID incarnation. pidfds also report exits if netlink drops one. */
-        refresh_pid(watch, event->event_data.exit.process_tgid);
+        refresh_pid(watch, event->event_data.exit.process_tgid, "event:exit");
         break;
     default:
         break;
@@ -352,7 +380,11 @@ static gboolean socket_ready(gint fd, GIOCondition condition, gpointer data) {
         ssize_t length = recvmsg(fd, &message, MSG_DONTWAIT);
         if (length < 0) {
             if (errno == EINTR) continue;
-            if (errno == ENOBUFS) { recover = TRUE; continue; }
+            if (errno == ENOBUFS) {
+                g_debug("process stream: receive buffer overflow");
+                recover = TRUE;
+                continue;
+            }
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
             watch->socket_source = 0;
             fallback(watch, g_strerror(errno));
@@ -364,11 +396,27 @@ static gboolean socket_ready(gint fd, GIOCondition condition, gpointer data) {
             return G_SOURCE_REMOVE;
         }
         if (message.msg_namelen < sizeof(sender) || sender.nl_family != AF_NETLINK || sender.nl_pid != 0) continue;
-        if (message.msg_flags & MSG_TRUNC) { recover = TRUE; continue; }
-        recover |= process_packet(watch, buffer.bytes, (size_t)length);
+        if (message.msg_flags & MSG_TRUNC) {
+            g_debug("process stream: truncated datagram");
+            recover = TRUE;
+            continue;
+        }
+        if (process_packet(watch, buffer.bytes, (size_t)length)) {
+            g_debug("process stream: overrun or malformed packet");
+            recover = TRUE;
+        }
         if (watch->socket < 0) return G_SOURCE_REMOVE;
     }
-    if (recover && !scan(watch, &watch->error)) notify(watch);
+    if (recover) {
+        watch->stream_recoveries++;
+        gint64 now = g_get_monotonic_time();
+        if (!watch->last_recovery_log || now - watch->last_recovery_log >= 5 * G_TIME_SPAN_SECOND) {
+            g_printerr("omapower: process stream loss/error; immediate recovery scan (total=%"
+                       G_GUINT64_FORMAT ")\n", watch->stream_recoveries);
+            watch->last_recovery_log = now;
+        }
+        if (!scan(watch, &watch->error, "stream-recovery")) notify(watch);
+    }
     return G_SOURCE_CONTINUE;
 }
 
@@ -397,7 +445,7 @@ ProcessWatch *process_watch_new(GHashTable *commands, gboolean force_poll,
             watch->socket_source = g_unix_fd_add(watch->socket, G_IO_IN | G_IO_HUP | G_IO_ERR,
                                                 socket_ready, watch);
             watch->ack_source = g_timeout_add_seconds(1, ack_timeout, watch);
-            watch->scan_source = g_timeout_add_seconds(RECONCILE_SECONDS, rescan, watch);
+            watch->scan_source = g_timeout_add(RECONCILE_MS, rescan, watch);
         }
     }
     if (watch->error) {
@@ -406,7 +454,7 @@ ProcessWatch *process_watch_new(GHashTable *commands, gboolean force_poll,
         return NULL;
     }
     /* Subscribe before the snapshot; queued events reconcile startup races. */
-    if (!scan(watch, error)) { process_watch_free(watch); return NULL; }
+    if (!scan(watch, error, "startup")) { process_watch_free(watch); return NULL; }
     return watch;
 }
 
@@ -414,7 +462,7 @@ gboolean process_watch_set_commands(ProcessWatch *watch, GHashTable *commands, G
     GHashTable *replacement = g_hash_table_ref(commands);
     g_hash_table_unref(watch->commands);
     watch->commands = replacement;
-    return scan(watch, error);
+    return scan(watch, error, "config");
 }
 
 GHashTable *process_watch_active(ProcessWatch *watch) {
