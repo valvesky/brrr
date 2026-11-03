@@ -2,6 +2,8 @@
 
 <img src="assets/logo.png" width="240" alt="Omapower logo">
 
+<sub>Artwork by <a href="https://twitter.com/monky_sm/status/1744264103558779075">@monky_sm</a>.</sub>
+
 # Omapower
 
 **Performance when you need it. Your usual profile when you don't.**
