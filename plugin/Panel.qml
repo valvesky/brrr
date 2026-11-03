@@ -59,68 +59,15 @@ Panel {
                     font.pixelSize: Style.font.subtitle
                     font.bold: true
                 }
-                Text {
-                    width: parent.width
-                    visible: !!root.hostWidget && !root.hostWidget.setupReady
-                    text: root.hostWidget && root.hostWidget.setupBusy ? strings.t("setup.busy") : strings.t("setup.intro")
-                    textFormat: Text.PlainText
-                    color: root.barForeground
-                    wrapMode: Text.WordWrap
-                }
-                Button {
-                    visible: !!root.hostWidget && !root.hostWidget.setupReady && !root.hostWidget.setupConfirming
-                    text: strings.t("setup.button")
-                    bordered: true
-                    focusable: true
-                    foreground: root.barForeground
-                    enabled: !!root.hostWidget && root.hostWidget.setupSupported && !root.hostWidget.setupBusy && !root.hostWidget.setupChecking
-                    onClicked: root.hostWidget.requestSetup()
-                }
-                Text {
-                    width: parent.width
-                    visible: !!root.hostWidget && root.hostWidget.setupConfirming
-                    text: root.hostWidget && root.hostWidget.missingPackages.length
-                        ? strings.t("setup.packages").arg(root.hostWidget.missingPackages.join(", "))
-                        : strings.t("setup.userOnly")
-                    textFormat: Text.PlainText
-                    color: root.barForeground
-                    wrapMode: Text.WordWrap
-                }
-                Row {
-                    spacing: Style.space(6)
-                    visible: !!root.hostWidget && root.hostWidget.setupConfirming
-                    Button {
-                        text: strings.t("setup.confirm")
-                        bordered: true
-                        focusable: true
-                        foreground: root.barForeground
-                        onClicked: root.hostWidget.confirmSetup()
-                    }
-                    Button {
-                        text: strings.t("setup.cancel")
-                        focusable: true
-                        foreground: root.barForeground
-                        onClicked: root.hostWidget.setupConfirming = false
-                    }
-                }
-                Text {
-                    width: parent.width
-                    visible: !!root.hostWidget && (root.hostWidget.setupError !== "" || (!root.hostWidget.setupChecking && !root.hostWidget.setupSupported))
-                    text: root.hostWidget ? root.hostWidget.setupError || strings.t("setup.unsupported") : ""
-                    textFormat: Text.PlainText
-                    color: root.barForeground
-                    wrapMode: Text.WordWrap
-                }
                 Toggle {
                     width: parent.width
                     label: strings.t("service.label")
                     description: root.hostWidget ? root.hostWidget.description : strings.t("status.unknown")
-                    checked: root.hostWidget ? root.hostWidget.serviceState === "active" : false
-                    enabled: !!root.hostWidget && root.hostWidget.setupReady && !root.hostWidget.setupBusy && !root.hostWidget.actionBusy && root.hostWidget.serviceState !== "unknown"
-                             && root.hostWidget.serviceState !== "activating" && root.hostWidget.serviceState !== "deactivating"
+                    checked: !!root.hostWidget && root.hostWidget.running && root.hostWidget.boostEnabled
+                    enabled: !!root.hostWidget && root.hostWidget.canEdit
                     foreground: root.barForeground
                     fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
-                    onClicked: root.hostWidget.toggleService()
+                    onClicked: root.hostWidget.toggleBoost()
                 }
                 Text {
                     width: parent.width
@@ -148,7 +95,7 @@ Panel {
                 }
                 Flickable {
                     id: chipViewport
-                    enabled: !!root.hostWidget && root.hostWidget.setupReady && !root.hostWidget.setupBusy
+                    enabled: !!root.hostWidget && root.hostWidget.canEdit
                     width: parent.width
                     readonly property real inset: Style.space(3)
                     height: Math.min(Style.space(180), Math.max(Style.space(32), chips.implicitHeight + inset * 2))
@@ -192,7 +139,7 @@ Panel {
                                     focusable: true
                                     horizontalPadding: Style.space(5)
                                     foreground: root.barForeground
-                                    enabled: !!root.hostWidget && !root.hostWidget.whitelistBusy && !root.hostWidget.whitelistError
+                                    enabled: !!root.hostWidget && root.hostWidget.canEdit
                                     onClicked: root.hostWidget.editWhitelist("--remove", chip.modelData)
                                 }
                             }
@@ -203,7 +150,7 @@ Panel {
                             focusable: true
                             tooltipText: strings.t("whitelist.add")
                             foreground: root.barForeground
-                            enabled: !!root.hostWidget && !root.hostWidget.whitelistBusy && !root.hostWidget.whitelistError
+                            enabled: !!root.hostWidget && root.hostWidget.canEdit
                             onClicked: { root.adding = true; Qt.callLater(function() { commandField.forceActiveFocus() }) }
                         }
                     }
@@ -211,7 +158,7 @@ Panel {
                 Row {
                     width: parent.width
                     spacing: Style.space(6)
-                    visible: root.adding && !!root.hostWidget && root.hostWidget.setupReady
+                    visible: root.adding && !!root.hostWidget && root.hostWidget.running
                     TextField {
                         id: commandField
                         width: Math.max(Style.space(80), parent.width - addButton.implicitWidth - cancelButton.implicitWidth - parent.spacing * 2)

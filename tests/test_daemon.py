@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Integration tests: all power-profile and systemd calls use a private bus."""
+"""Integration tests: all power-profile calls use a private bus."""
 import json
 import os
 import shutil
@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import warnings
@@ -23,24 +24,10 @@ DEFAULT_COMMANDS = sorted([
     'clang', 'clang++', 'zig', 'go', 'javac', 'swiftc', 'swift-frontend',
     'gfortran', 'flang', 'nvcc', 'ghc',
 ])
-SYSTEMD = 'org.freedesktop.systemd1'
-MANAGER = '/org/freedesktop/systemd1'
-UNIT_PATH = MANAGER + '/unit/omapower_2eservice'
 PP_XML = '''<node><interface name="net.hadess.PowerProfiles">
 <method name="HoldProfile"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="u" direction="out"/></method>
 <method name="ReleaseProfile"><arg type="u" direction="in"/></method>
 <signal name="ProfileReleased"><arg type="u"/></signal>
-</interface></node>'''
-MANAGER_XML = '''<node><interface name="org.freedesktop.systemd1.Manager">
-<method name="Subscribe"/><method name="RefUnit"><arg type="s" direction="in"/></method>
-<method name="LoadUnit"><arg type="s" direction="in"/><arg type="o" direction="out"/></method>
-<signal name="Reloading"><arg type="b"/></signal>
-<signal name="UnitNew"><arg type="s"/><arg type="o"/></signal>
-<signal name="UnitRemoved"><arg type="s"/><arg type="o"/></signal>
-</interface></node>'''
-UNIT_XML = '''<node><interface name="org.freedesktop.systemd1.Unit">
-<property name="LoadState" type="s" access="read"/>
-<property name="ActiveState" type="s" access="read"/>
 </interface></node>'''
 CHILD = '''import ctypes, os, sys, threading
 libc = ctypes.CDLL(None)
@@ -162,77 +149,55 @@ class Profiles(Connection):
         self.bus.flush_sync(None)
 
 
-class Systemd(Connection):
-    def __init__(self, available=True):
-        super().__init__(SYSTEMD)
-        self.active = 'inactive'
-        self.available = available
-        self.calls = []
-        self.reads = 0
-        self.export(MANAGER, MANAGER_XML, self.method)
-        self.export(UNIT_PATH, UNIT_XML, getter=self.getter)
-        self.own()
-
-    def method(self, connection, sender, path, interface, method, parameters, invocation):
-        self.calls.append(method)
-        if method == 'LoadUnit':
-            if self.available:
-                invocation.return_value(GLib.Variant('(o)', (UNIT_PATH,)))
-            else:
-                invocation.return_dbus_error(SYSTEMD + '.NoSuchUnit', 'missing service')
-        else:
-            invocation.return_value(None)
-
-    def getter(self, connection, sender, path, interface, property_name):
-        self.reads += 1
-        return GLib.Variant('s', self.active if property_name == 'ActiveState' else 'loaded')
-
-    def set_state(self, state):
-        self.active = state
-        # Invalidation must also work, not just inline property values.
-        self.bus.emit_signal(None, UNIT_PATH, 'org.freedesktop.DBus.Properties', 'PropertiesChanged',
-            GLib.Variant('(sa{sv}as)', (SYSTEMD + '.Unit', {}, ['ActiveState'])))
-
-    def reload(self):
-        self.bus.emit_signal(None, MANAGER, SYSTEMD + '.Manager', 'Reloading', GLib.Variant('(b)', (False,)))
-
-
 class Daemon:
-    def __init__(self, commands, poll=False, address=ADDRESS):
-        self.temp = tempfile.TemporaryDirectory(prefix='omapower-test-')
-        self.base = Path(self.temp.name)
+    """Runs the helper as the shell plugin does: supervised, state on stdout."""
+    def __init__(self, commands, poll=False, address=ADDRESS, base=None, wait=True):
+        self.temp = None if base else tempfile.TemporaryDirectory(prefix='omapower-test-')
+        self.base = Path(base or self.temp.name)
         self.config = self.base / 'config' / 'omapower' / 'config.json'
-        self.config.parent.mkdir(parents=True)
+        self.config.parent.mkdir(parents=True, exist_ok=True)
         self.runtime = self.base / 'runtime'
-        self.runtime.mkdir(mode=0o700)
-        self.status = self.runtime / 'omapower.json'
-        self.configure(commands)
-        env = dict(os.environ, DBUS_SYSTEM_BUS_ADDRESS=address,
+        self.runtime.mkdir(mode=0o700, exist_ok=True)
+        if commands is not None:
+            self.configure(commands)
+        self.env = dict(os.environ, DBUS_SYSTEM_BUS_ADDRESS=address,
             XDG_CONFIG_HOME=str(self.base / 'config'), XDG_RUNTIME_DIR=str(self.runtime),
             G_DEBUG='fatal-warnings', GIO_USE_VFS='local')
-        self.process = subprocess.Popen([BINARY] + (['--poll'] if poll else []), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.process = subprocess.Popen([BINARY, '--supervised'] + (['--poll'] if poll else []), env=self.env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.states = []
         self.log = ''
-        until(lambda: self.state() is not None or self.process.poll() is not None)
-        assert self.process.poll() is None, self.process.stderr.read()
+        self.reader = threading.Thread(target=self.read, daemon=True)
+        self.reader.start()
+        if wait:
+            until(lambda: self.states or self.process.poll() is not None)
+            assert self.process.poll() is None, self.process.stderr.read()
 
-    def configure(self, commands):
+    def read(self):
+        for line in self.process.stdout:
+            self.states.append(json.loads(line))
+
+    def configure(self, commands, **fields):
         temporary = self.config.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'commands': commands}))
+        temporary.write_text(json.dumps(dict(fields, commands=commands)))
         temporary.replace(self.config)
 
+    def cli(self, *args):
+        return subprocess.run([BINARY, *args], env=self.env, capture_output=True, text=True)
+
     def state(self):
-        try:
-            return json.loads(self.status.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
-            return None
+        return self.states[-1] if self.states else None
 
     def close(self):
         if self.process.poll() is None:
             self.process.terminate()
         until(lambda: self.process.poll() is not None, timeout=7)
-        _, self.log = self.process.communicate(timeout=1)
-        self.temp.cleanup()
+        self.reader.join(timeout=1)
+        self.log = self.process.stderr.read()
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            stream.close()
+        if self.temp:
+            self.temp.cleanup()
         for diagnostic in ('CRITICAL', 'WARNING', 'AddressSanitizer', 'LeakSanitizer', 'runtime error:'):
             assert diagnostic not in self.log, self.log
 
@@ -283,14 +248,15 @@ class Lifecycle(unittest.TestCase):
     def released(self, daemon):
         until(lambda: not daemon.state()['holding'] and not self.profiles.holds)
 
-    def test_idle_status_is_not_rewritten(self):
+    def test_idle_status_is_not_repeated(self):
         daemon = self.start(())
         until(lambda: daemon.state()['available'])
-        before = daemon.status.stat()
+        before = len(daemon.states)
         pump(1.1)
-        after = daemon.status.stat()
-        self.assertEqual((before.st_ino, before.st_mtime_ns), (after.st_ino, after.st_mtime_ns))
+        self.assertEqual(len(daemon.states), before)
         self.assertEqual(self.profiles.hold_calls, 0)
+        self.assertEqual(daemon.state(), dict(enabled=True, configError=False, commands=[], active=[],
+            holding=False, suppressed=False, available=True, monitor=daemon.state()['monitor']))
 
     def test_startup_and_overlapping_matches(self):
         first = self.child()
@@ -540,14 +506,76 @@ class Lifecycle(unittest.TestCase):
         daemon.configure([])
         self.released(daemon)
 
-    def test_invalid_config_disconnects_and_drops_hold(self):
+    def test_invalid_config_drops_hold_until_fixed(self):
         self.child()
         daemon = self.start()
         self.held(daemon)
-        daemon.config.write_text('invalid')
+        for invalid in ('invalid', '{"commands":["%s"],"enabled":"no"}' % COMM):
+            daemon.config.write_text(invalid)
+            until(lambda: daemon.state()['configError'])
+            self.released(daemon)
+            self.assertEqual(daemon.state()['commands'], [])
+            self.assertIsNone(daemon.process.poll())
+            daemon.configure([COMM])
+            until(lambda: not daemon.state()['configError'])
+            self.held(daemon)
+
+    def prepared(self, text):
+        """Start a daemon whose configuration file already holds text."""
+        temp = tempfile.TemporaryDirectory(prefix='omapower-test-')
+        self.addCleanup(temp.cleanup)
+        config = Path(temp.name) / 'config' / 'omapower' / 'config.json'
+        config.parent.mkdir(parents=True)
+        config.write_text(text)
+        daemon = Daemon(None, base=temp.name)
+        self.daemons.append(daemon)
+        return daemon
+
+    def test_invalid_config_at_startup_is_reported(self):
+        self.child()
+        daemon = self.prepared('invalid')
+        until(lambda: daemon.state()['configError'])
+        self.assertFalse(daemon.state()['enabled'])
+        daemon.configure([COMM])
+        self.held(daemon)
+
+    def test_disable_releases_and_enable_reacquires(self):
+        self.child()
+        daemon = self.start()
+        self.held(daemon)
+        self.assertEqual(daemon.cli('--disable').returncode, 0)
+        until(lambda: daemon.state()['enabled'] is False)
+        self.released(daemon)
+        self.assertFalse(daemon.state()['suppressed'])
+        self.assertEqual(json.loads(daemon.config.read_text()), dict(commands=[COMM], enabled=False))
+        self.assertEqual(daemon.cli('--enable').returncode, 0)
+        until(lambda: daemon.state()['enabled'])
+        self.held(daemon)
+        self.assertEqual(self.profiles.hold_calls, 2)
+
+    def test_disabled_at_startup_never_holds(self):
+        self.child()
+        daemon = self.prepared(json.dumps(dict(commands=[COMM], enabled=False)))
+        until(lambda: daemon.state()['enabled'] is False and daemon.state()['active'] == [COMM])
+        pump(.3)
+        self.assertEqual(self.profiles.hold_calls, 0)
+
+    def test_supervisor_pipe_closing_stops_and_drops_hold(self):
+        self.child()
+        daemon = self.start()
+        self.held(daemon)
+        daemon.process.stdin.close()
         until(lambda: daemon.process.poll() is not None)
-        self.assertEqual(daemon.process.returncode, 1)
+        self.assertEqual(daemon.process.returncode, 0)
         until(lambda: not self.profiles.holds)
+
+    def test_second_instance_is_refused(self):
+        daemon = self.start(())
+        second = Daemon(None, base=daemon.base, wait=False)
+        self.daemons.append(second)
+        until(lambda: second.process.poll() is not None, timeout=8)
+        self.assertEqual(second.process.returncode, 75)
+        self.assertIsNone(daemon.process.poll())
 
     def test_explicit_polling_fallback(self):
         daemon = self.start(poll=True)
@@ -573,129 +601,27 @@ class Lifecycle(unittest.TestCase):
                 bus.communicate(timeout=3)
 
 
-class ServiceMonitor(unittest.TestCase):
+@unittest.skipUnless(shutil.which('quickshell'), 'quickshell is needed for the headless plugin smoke test')
+class PluginSmoke(unittest.TestCase):
+    """Run the real plugin service and widget in Quickshell, with visual-only stubs."""
     def setUp(self):
-        self.manager = Systemd()
-        self.temp = tempfile.TemporaryDirectory(prefix='omapower-widget-test-')
-        self.config = Path(self.temp.name) / 'omapower' / 'config.json'
-        self.process = subprocess.Popen([BINARY, '--watch-widget'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=dict(os.environ, G_DEBUG='fatal-warnings', GIO_USE_VFS='local', XDG_CONFIG_HOME=self.temp.name))
-        os.set_blocking(self.process.stdout.fileno(), False)
-        self.buffer = b''
-        self.states = []
-        self.configs = []
-
-    def tearDown(self):
-        if self.process.poll() is None:
-            self.process.terminate()
-        until(lambda: self.process.poll() is not None, timeout=7)
-        _, log = self.process.communicate(timeout=1)
-        self.manager.close()
-        self.temp.cleanup()
-        for diagnostic in (b'CRITICAL', b'WARNING', b'AddressSanitizer', b'LeakSanitizer', b'runtime error:'):
-            self.assertNotIn(diagnostic, log)
-
-    def read_states(self):
-        try:
-            self.buffer += os.read(self.process.stdout.fileno(), 65536)
-        except BlockingIOError:
-            pass
-        while b'\n' in self.buffer:
-            line, self.buffer = self.buffer.split(b'\n', 1)
-            state = json.loads(line)
-            if 'service' in state:
-                self.states.append(state['service'])
-            if 'configError' in state:
-                self.configs.append(state)
-        return self.states[-1] if self.states else None
-
-    def test_notifications_no_idle_queries_and_manager_restart(self):
-        until(lambda: self.read_states() == 'inactive')
-        self.assertEqual(self.manager.calls.count('Subscribe'), 1)
-        self.assertEqual(self.manager.calls.count('RefUnit'), 1)
-        reads = self.manager.reads
-        pump(.3)
-        self.assertEqual(reads, self.manager.reads)
-        self.manager.set_state('active')
-        until(lambda: self.read_states() == 'active')
-        self.manager.reload()
-        pump(.1)
-        self.assertEqual(self.manager.calls.count('RefUnit'), 1)
-        self.manager.close()
-        until(lambda: self.read_states() == 'unknown')
-        self.manager = Systemd()
-        until(lambda: self.read_states() == 'inactive')
-        self.assertEqual(self.manager.calls.count('Subscribe'), 1)
-
-    def test_configuration_notifications_and_repair(self):
-        until(lambda: self.read_states() is not None and bool(self.configs))
-        self.assertEqual(self.configs[-1], {'configError': False, 'commands': DEFAULT_COMMANDS})
-        self.config.write_text('invalid')
-        until(lambda: self.read_states() is not None and self.configs[-1]['configError'])
-        temporary = self.config.with_suffix('.tmp')
-        temporary.write_text('{"commands":["gcc"]}')
-        temporary.replace(self.config)
-        until(lambda: self.read_states() is not None and self.configs[-1]['commands'] == ['gcc'])
-        self.config.parent.rename(self.config.parent.with_name('old'))
-        pump(.15)
-        self.config.parent.mkdir()
-        self.config.write_text('{"commands":["clang"]}')
-        until(lambda: self.read_states() is not None and self.configs[-1]['commands'] == ['clang'])
-        self.assertFalse(self.configs[-1]['configError'])
-
-    def test_symlink_target_replacement_and_creation(self):
-        until(lambda: self.read_states() is not None and bool(self.configs))
-        target = Path(self.temp.name) / 'elsewhere' / 'commands.json'
-        self.config.symlink_to(target)
-        pump(.15)  # dangling target: defaults, but keep observing its ancestor
-        target.parent.mkdir()
-        target.write_text('{"commands":["gcc"]}')
-        until(lambda: self.read_states() is not None and self.configs[-1]['commands'] == ['gcc'])
-        temporary = target.with_suffix('.tmp')
-        temporary.write_text('{"commands":["clang"]}')
-        temporary.replace(target)
-        until(lambda: self.read_states() is not None and self.configs[-1]['commands'] == ['clang'])
-
-    def test_missing_unit_recovers_after_reload(self):
-        until(lambda: self.read_states() == 'inactive')
-        self.manager.close()
-        self.manager = Systemd(available=False)
-        until(lambda: self.read_states() == 'unknown')
-        pump(.05)
-        self.manager.available = True
-        self.manager.reload()
-        until(lambda: self.read_states() == 'inactive')
-
-
-
-@unittest.skipUnless(shutil.which('quickshell'), 'quickshell is needed for the headless widget smoke test')
-class WidgetSmoke(unittest.TestCase):
-    """Use real Quickshell I/O and the real widget, with tiny visual-only stubs."""
-    def setUp(self):
-        self.manager = Systemd()
+        self.profiles = Profiles()
+        self.children = []
         self.temp = tempfile.TemporaryDirectory(prefix='omapower-qml-test-')
         base = Path(self.temp.name)
-        self.config_home = base / 'config'
+        self.config = base / 'config' / 'omapower' / 'config.json'
         self.runtime = base / 'runtime'
         self.runtime.mkdir(mode=0o700)
         shell = base / 'shell'
-        plugin = shell / 'plugin'
-        plugin.mkdir(parents=True)
+        (shell / 'plugin' / 'i18n').mkdir(parents=True)
+        (shell / 'bin').mkdir()
         project = Path(__file__).resolve().parent.parent
-        for name in ('BarWidget.qml', 'Whitelist.js'):
-            shutil.copyfile(project / 'plugin' / name, plugin / name)
-        # Exercise the real QML flow without installing packages or touching systemd.
-        (shell / 'setup.sh').write_text('''#!/bin/bash
-case "$1" in
-  --check) cat "$OMAPOWER_SETUP_STATE" ;;
-  --install-deps) echo deps >> "$OMAPOWER_SETUP_LOG"; [[ ! -e $OMAPOWER_SETUP_CANCEL ]] || exit 126 ;;
-  --setup) echo setup >> "$OMAPOWER_SETUP_LOG"; printf '{"ready":true,"supported":true,"missing":[]}' > "$OMAPOWER_SETUP_STATE" ;;
-esac
-''')
-        self.setup_state = base / 'setup.json'
-        self.setup_state.write_text('{"ready":true,"supported":true,"missing":[]}')
-        self.setup_log = base / 'setup.log'
-        self.setup_cancel = base / 'cancel-auth'
+        for name in ('Service.qml', 'BarWidget.qml', 'Whitelist.js', 'i18n/en.json'):
+            shutil.copyfile(project / 'plugin' / name, shell / 'plugin' / name)
+        shutil.copy(project / 'bin' / 'retire-legacy-service', shell / 'bin')
+        launcher = shell / 'bin' / 'omapower'
+        launcher.write_text('#!/bin/sh\nexec %s "$@"\n' % json.dumps(BINARY))
+        launcher.chmod(0o755)
         stubs = {
             'Ui/qmldir': 'module qs.Ui\nBarWidget 1.0 BarWidget.qml\nWidgetButton 1.0 WidgetButton.qml\n',
             'Ui/BarWidget.qml': 'import QtQuick\nItem { property string moduleName; property var bar: null }',
@@ -730,13 +656,14 @@ import Quickshell
 import Quickshell.Io
 import "./plugin" as Plugin
 ShellRoot {
-    Plugin.BarWidget { id: widget; binaryPath: OMAPOWER_BINARY }
+    // A plugin update or disable destroys and recreates the service.
+    Loader { id: service; sourceComponent: Plugin.Service {} }
+    Plugin.BarWidget { id: widget }
     property string snapshot: JSON.stringify({
-        commands: widget.commands, error: widget.whitelistError,
-        service: widget.serviceState, holding: widget.holding,
-        valid: widget.statusValid, busy: widget.whitelistBusy,
-        ready: widget.setupReady, setupBusy: widget.setupBusy, setupError: widget.setupError,
-        confirming: widget.setupConfirming, checking: widget.setupChecking, missing: widget.missingPackages
+        valid: widget.statusValid, running: widget.running, reason: widget.stopReason,
+        enabled: widget.boostEnabled, configError: widget.configError, commands: widget.commands,
+        error: widget.whitelistError, holding: widget.holding, canEdit: widget.canEdit,
+        actionError: widget.actionError, editError: widget.whitelistActionError
     })
     onSnapshotChanged: console.log("OMAPOWER_WIDGET " + snapshot)
     FileView {
@@ -746,44 +673,69 @@ ShellRoot {
         onLoaded: {
             const command = JSON.parse(text())
             if (command.add) widget.editWhitelist("--add", command.add)
-            if (command.check) widget.checkSetup()
-            if (command.request) widget.requestSetup()
-            if (command.confirm) widget.confirmSetup()
-            if (command.cancel) widget.setupConfirming = false
+            if (command.toggle) widget.toggleBoost()
+            if (command.service !== undefined) service.active = command.service
         }
     }
-    Timer { interval: 12000; running: true; onTriggered: Qt.quit() }
+    Timer { interval: 25000; running: true; onTriggered: Qt.quit() }
 }''',
         }
         for name, text in stubs.items():
             path = shell / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text.replace('OMAPOWER_BINARY', json.dumps(BINARY)))
-        link = self.config_home / 'omarchy' / 'plugins' / 'raw.omapower'
-        link.parent.mkdir(parents=True)
-        link.symlink_to(project / 'plugin')
+            path.write_text(text)
         self.control = base / 'control.json'
         self.control.write_text('{}')
-        env = dict(os.environ, QT_QPA_PLATFORM='offscreen', DBUS_SYSTEM_BUS_ADDRESS=ADDRESS,
-            XDG_CONFIG_HOME=str(self.config_home), XDG_RUNTIME_DIR=str(self.runtime),
-            XDG_STATE_HOME=str(base / 'state'), OMAPOWER_CONTROL=str(self.control), GIO_USE_VFS='local',
-            OMAPOWER_SETUP_STATE=str(self.setup_state), OMAPOWER_SETUP_LOG=str(self.setup_log),
-            OMAPOWER_SETUP_CANCEL=str(self.setup_cancel))
+        self.base = base
+        self.systemctl_fails = base / 'systemctl-fails'
+        tools = base / 'tools'
+        tools.mkdir()
+        (tools / 'systemctl').write_text('#!/bin/sh\n[ ! -e %s ]\n' % json.dumps(str(self.systemctl_fails)))
+        (tools / 'systemctl').chmod(0o755)
+        self.shell = shell
+        # Isolate everything the plugin may touch, including the legacy-unit retirement.
+        env = dict(os.environ, QT_QPA_PLATFORM='offscreen', DBUS_SYSTEM_BUS_ADDRESS=ADDRESS, HOME=str(base),
+            XDG_CONFIG_HOME=str(base / 'config'), XDG_DATA_HOME=str(base / 'data'),
+            XDG_RUNTIME_DIR=str(self.runtime), XDG_STATE_HOME=str(base / 'state'),
+            OMAPOWER_CONTROL=str(self.control), GIO_USE_VFS='local', PATH=str(tools) + ':' + os.environ['PATH'])
         env.pop('WAYLAND_DISPLAY', None)
-        self.process = subprocess.Popen(['quickshell', '--no-color', '--path', str(shell / 'shell.qml')],
-            env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        os.set_blocking(self.process.stdout.fileno(), False)
+        self.env = env
         self.buffer = b''
         self.output = ''
         self.snapshot = {}
+        if not self._testMethodName.endswith('_legacy'):
+            self.launch()
+
+    def launch(self):
+        self.process = subprocess.Popen(['quickshell', '--no-color', '--path', str(self.shell / 'shell.qml')],
+            env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        os.set_blocking(self.process.stdout.fileno(), False)
 
     def tearDown(self):
         if self.process.poll() is None:
             self.process.terminate()
         until(lambda: self.process.poll() is not None, timeout=7)
         self.process.communicate(timeout=1)
-        self.manager.close()
+        for child in self.children:
+            if child.poll() is None:
+                child.terminate()
+            child.communicate(timeout=3)
+        until(lambda: self.helper() is None, timeout=7, message='helper outlived the shell')
+        self.profiles.close()
         self.temp.cleanup()
+
+    def helper(self):
+        """PID of this test's supervised helper, found by its private runtime directory."""
+        marker = ('XDG_RUNTIME_DIR=%s' % self.runtime).encode()
+        for entry in Path('/proc').iterdir():
+            try:
+                if not entry.name.isdigit() or os.readlink(entry / 'exe') != BINARY:
+                    continue
+                if marker in (entry / 'environ').read_bytes().split(b'\0'):
+                    return int(entry.name)
+            except OSError:
+                continue
+        return None
 
     def read_snapshot(self):
         try:
@@ -799,82 +751,78 @@ ShellRoot {
                 self.snapshot = json.loads(line.split(marker, 1)[1])
         return self.snapshot
 
-    def wait(self, predicate):
+    def wait(self, predicate, timeout=5):
         try:
-            until(lambda: predicate(self.read_snapshot()), timeout=5)
+            until(lambda: predicate(self.read_snapshot()), timeout=timeout)
         except AssertionError:
             self.read_snapshot()
-            self.fail(self.output)
+            self.fail('%s\nlast snapshot: %s' % (self.output, self.snapshot))
 
-    def send_control(self, command):
+    def send(self, **command):
         temporary = self.control.with_suffix('.tmp')
         temporary.write_text(json.dumps(command))
         temporary.replace(self.control)
 
-    def test_setup_cancel_auth_failure_and_retry(self):
-        self.setup_cancel.touch()
-        self.wait(lambda state: state.get('ready') is True)
-        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["glib2"]}')
-        self.send_control(dict(check=True))
-        self.wait(lambda state: state.get('ready') is False and not state.get('checking'))
-        self.send_control(dict(request=True))
-        self.wait(lambda state: state.get('confirming') is True)
-        self.send_control(dict(cancel=True))
-        self.wait(lambda state: state.get('confirming') is False)
-        self.assertFalse(self.setup_log.exists())
-        self.send_control(dict(request=True))
-        self.wait(lambda state: state.get('confirming') is True)
-        self.send_control(dict(confirm=True))
-        self.wait(lambda state: bool(state.get('setupError')) and not state.get('setupBusy'))
-        self.assertEqual(self.setup_log.read_text(), 'deps\n')
-        self.setup_state.write_text('{"ready":false,"supported":true,"missing":[]}')
-        self.send_control(dict(check=True))
-        self.wait(lambda state: state.get('missing') == [] and not state.get('checking'))
-        self.send_control(dict(request=True))
-        self.wait(lambda state: state.get('confirming') is True)
-        self.send_control(dict(confirm=True))
-        self.wait(lambda state: state.get('ready') is True and not state.get('setupBusy'))
-        self.assertEqual(self.setup_log.read_text(), 'deps\nsetup\n')
+    def child(self):
+        child = subprocess.Popen(['/usr/bin/python3', '-u', '-c', CHILD, COMM],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.children.append(child)
+        self.assertEqual(child.stdout.readline().strip(), 'ready')
+        return child
 
-    def test_setup_with_successful_auth_runs_build_then_refreshes(self):
-        self.wait(lambda state: state.get('ready') is True)
-        self.setup_state.write_text('{"ready":false,"supported":true,"missing":["glib2"]}')
-        self.send_control(dict(check=True))
-        self.wait(lambda state: state.get('ready') is False and not state.get('checking'))
-        self.send_control(dict(request=True))
-        self.wait(lambda state: state.get('confirming') is True)
-        self.send_control(dict(confirm=True))
-        self.wait(lambda state: state.get('ready') is True and not state.get('setupBusy'))
-        self.assertEqual(self.setup_log.read_text(), 'deps\nsetup\n')
-        self.assertFalse(self.snapshot.get('setupError'))
-
-    def test_widget_updates_without_periodic_queries(self):
-        self.wait(lambda state: state.get('service') == 'inactive' and state.get('commands') == DEFAULT_COMMANDS)
-        config = self.config_home / 'omapower' / 'config.json'
-        config.write_text('{"commands":["gcc"]}')
-        self.wait(lambda state: state.get('commands') == ['gcc'])
-        config.parent.rename(config.parent.with_name('old'))
-        pump(.15)
-        config.parent.mkdir()
-        config.write_text('{"commands":["clang"]}')
-        self.wait(lambda state: state.get('commands') == ['clang'])
-        config.write_text('invalid')
-        self.wait(lambda state: bool(state.get('error')))
-        config.write_text('{"commands":["clang"]}')
-        self.wait(lambda state: state.get('commands') == ['clang'] and not state.get('error'))
-        self.control.write_text('{"add":"gcc"}')
-        self.wait(lambda state: state.get('commands') == ['clang', 'gcc'] and not state.get('busy'))
-        self.manager.set_state('active')
-        self.wait(lambda state: state.get('service') == 'active' and not state.get('valid'))
-        status = self.runtime / 'omapower.json'
-        status.write_text('{"holding":true,"suppressed":false,"available":true,"monitor":"events"}')
-        self.wait(lambda state: state.get('valid') and state.get('holding'))
-        self.manager.set_state('inactive')
-        self.wait(lambda state: state.get('service') == 'inactive' and not state.get('valid'))
-        self.manager.set_state('active')
-        self.wait(lambda state: state.get('service') == 'active' and state.get('valid'))
-        self.assertNotIn('failed to load', self.output.lower())
+    def test_install_starts_boost_and_widget_controls_it(self):
+        self.wait(lambda s: s.get('running') and s.get('enabled') and s.get('commands') == DEFAULT_COMMANDS)
+        self.send(add=COMM)
+        self.wait(lambda s: COMM in s.get('commands', []) and s.get('canEdit'))
+        self.child()
+        self.wait(lambda s: s.get('holding'))
+        until(lambda: bool(self.profiles.holds))
+        self.send(toggle=True)
+        self.wait(lambda s: s.get('enabled') is False and not s.get('holding') and s.get('canEdit'))
+        until(lambda: not self.profiles.holds)
+        self.send(toggle=True)
+        self.wait(lambda s: s.get('enabled') and s.get('holding'))
+        self.config.write_text('invalid')
+        self.wait(lambda s: s.get('configError') and s.get('error') and not s.get('holding'))
+        until(lambda: not self.profiles.holds)
+        self.config.write_text(json.dumps(dict(commands=[COMM])))
+        self.wait(lambda s: not s.get('configError') and s.get('commands') == [COMM] and s.get('holding'))
         self.assertNotIn('ReferenceError', self.output)
+        self.assertNotIn('TypeError', self.output)
+
+    def test_never_runs_beside_the_legacy_service_legacy(self):
+        data = self.base / 'data' / 'omapower'
+        unit = self.base / 'config' / 'systemd' / 'user' / 'omapower.service'
+        data.mkdir(parents=True)
+        unit.parent.mkdir(parents=True)
+        unit.write_text('[Service]\nExecStart="%s"\n' % (data / 'omapower'))
+        self.systemctl_fails.touch()
+        self.launch()
+        self.wait(lambda s: s.get('running') is False and s.get('reason') == 'legacy')
+        pump(.5)
+        self.assertIsNone(self.helper())
+        self.systemctl_fails.unlink()
+        self.wait(lambda s: s.get('running'), timeout=9)
+        self.assertFalse(unit.exists())
+
+    def test_helper_is_restarted_and_stops_with_the_shell(self):
+        self.wait(lambda s: s.get('running'))
+        first = self.helper()
+        self.assertIsNotNone(first)
+        os.kill(first, 9)
+        self.wait(lambda s: s.get('running') is False and s.get('reason') == 'stopped')
+        self.wait(lambda s: s.get('running'), timeout=9)
+        second = self.helper()
+        self.assertNotIn(second, (None, first))
+        self.send(service=False)
+        until(lambda: self.helper() is None, timeout=7, message='helper outlived its plugin service')
+        self.send(service=True)
+        self.wait(lambda s: s.get('running') is False)
+        self.wait(lambda s: s.get('running'))
+        self.assertNotIn(self.helper(), (None, second))
+        self.process.terminate()
+        until(lambda: self.process.poll() is not None, timeout=7)
+        until(lambda: self.helper() is None, timeout=7, message='helper outlived the shell')
 
 def setUpModule():
     # unittest installs its filters after importing the module. Suppress only

@@ -2,18 +2,20 @@
   "schemaVersion": 1,
   "id": "raw.omapower",
   "name": "Omapower",
-  "version": "0.3.0",
-  "description": "View whitelisted commands and control automatic performance mode",
+  "version": "0.4.0",
+  "description": "Automatically boost to the performance profile while chosen commands run",
   "author": "raw",
   "kinds": [
+    "service",
     "bar-widget"
   ],
   "entryPoints": {
+    "service": "plugin/Service.qml",
     "barWidget": "plugin/BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Omapower",
-    "description": "Automatic performance profile controls and whitelist",
+    "description": "Automatic boost status, switch and watched commands",
     "category": "System",
     "allowMultiple": false
   }

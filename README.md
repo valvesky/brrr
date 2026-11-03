@@ -16,9 +16,9 @@
 omarchy plugin add https://github.com/valvesky/omapower.git --enable
 ```
 
-Requires Omarchy with Quickshell plugin support. Click the widget and choose **Set up Omapower** to build and enable the daemon. Missing system packages require administrator authentication; the build and user service do not.
+Requires Omarchy with Quickshell plugin support. Automatic boost starts right after installation: the plugin ships a prebuilt helper, so there's nothing to build, no packages to install and no setup step.
 
-See the [setup guide](docs/guide.md#get-started) for details and manual installation.
+See the [guide](docs/guide.md#get-started) for details, including a standalone systemd mode.
 
 ## About
 
@@ -26,7 +26,7 @@ Omapower gives demanding commands a little extra power, without leaving your mac
 
 - **Automatic performance** — holds the performance profile while a configured command is running.
 - **Your usual profile afterward** — releases its hold when the work is done.
-- **Optional bar widget** — see your profile, edit watched commands, and start or stop the service.
+- **Bar widget** — see your profile and status, edit watched commands, and switch automatic boost on or off.
 
 Watches common compilers by default, including Rust/Cargo, GCC, Clang, Zig, Go, Java, Swift, Fortran, CUDA, and GHC. Choose your own commands in the widget or with `omapower --add NAME`.
 

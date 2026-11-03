@@ -33,6 +33,19 @@ static void test_config(void) {
     g_assert_cmpuint(g_hash_table_size(names), ==, 0);
     g_hash_table_unref(names);
 
+    gboolean enabled = FALSE;
+    g_assert_true(g_file_set_contents(file, "{\"commands\":[],\"enabled\":false}", -1, &error));
+    names = load_config(file, &enabled, &error);
+    g_assert_no_error(error);
+    g_assert_false(enabled);
+    g_hash_table_unref(names);
+
+    g_assert_true(g_file_set_contents(file, "{\"commands\":[],\"enabled\":1}", -1, &error));
+    names = load_config(file, &enabled, &error);
+    g_assert_null(names);
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL);
+    g_clear_error(&error);
+
     g_assert_true(g_file_set_contents(file, "{\"commands\":[\"/bin/rustc\"]}", -1, &error));
     names = load_commands(file, &error);
     g_assert_null(names);

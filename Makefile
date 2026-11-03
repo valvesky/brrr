@@ -6,10 +6,11 @@ CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
 CPPFLAGS += $(shell pkg-config --cflags $(PKGS))
 LDLIBS += $(shell pkg-config --libs $(PKGS))
 
-SOURCES = omapower.c config.c process-watch.c service-watch.c
+SOURCES = omapower.c config.c process-watch.c
 HEADERS = omapower.h json-util.h vendor/json.h
 
-# OMAPOWER_OUT (environment) redirects the binary, e.g. out of a watched plugin directory.
+# OMAPOWER_OUT (environment) redirects the binary; scripts/build-release.sh uses it
+# to build the prebuilt bin/omapower-$(uname -m) helpers.
 omapower: $(SOURCES) $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o "$${OMAPOWER_OUT:-$@}" omapower.c $(LDLIBS)
 
@@ -26,7 +27,7 @@ test: omapower tests/test_config tests/test_process
 	sh tests/test_edit.sh
 	$(PYTHON) tests/test_json.py
 	$(NODE) tests/test_whitelist.js
-	$(PYTHON) tests/test_setup.py
+	sh tests/test_retire.sh
 	dbus-run-session -- $(PYTHON) tests/test_daemon.py ./omapower
 
 clean:

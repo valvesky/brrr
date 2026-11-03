@@ -1,15 +1,20 @@
 #include "omapower.h"
 #include <glib-unix.h>
 #include "json-util.h"
+#include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 /* Unity build: compile this file only. */
 #include "config.c"
 #include "process-watch.c"
-#include "service-watch.c"
+
+/* Exit status when another instance holds the per-user lock (EX_TEMPFAIL). */
+#define EXIT_BUSY 75
 
 #define DEST "net.hadess.PowerProfiles"
 #define OBJECT "/net/hadess/PowerProfiles"
@@ -21,13 +26,15 @@ typedef struct {
     GMainLoop *loop;
     ProcessWatch *processes;
     ConfigWatch *config_watch;
-    gchar *config, *status, *last_status, *owner;
+    GHashTable *commands; /* configured names, for status reports */
+    gchar *config, *last_status, *owner;
     GCancellable *cancel;
     guint generation, cookie, released_cookie, name_watch, subscription;
-    guint reconcile_source, retry_source;
+    guint reconcile_source, retry_source, stdin_source;
     guint release_failures;
     Operation pending;
     gboolean holding, suppressed, stopping, release_seen;
+    gboolean enabled, config_error, supervised;
     int exit_status;
 } App;
 
@@ -39,24 +46,32 @@ static void fail(App *app, const char *message) {
     g_main_loop_quit(app->loop);
 }
 
-static gboolean write_status(App *app, GError **error) {
+#define BOOL(value) ((value) ? "true" : "false")
+
+/* Report state once per change: a log line, plus one JSON line on stdout when
+ * supervised by the shell plugin. Returns FALSE if the supervisor has gone. */
+static gboolean report_status(App *app) {
     GHashTable *active = process_watch_active(app->processes);
     gchar *names = json_names(active);
+    gchar *commands = json_names(app->commands);
     char *mode = json_quote(process_watch_mode(app->processes));
     if (!mode) g_error("cannot encode JSON detection mode");
-    gchar *json = g_strdup_printf("{\"active\":%s,\"holding\":%s,\"suppressed\":%s,\"available\":%s,\"monitor\":%s}",
-        names, app->holding ? "true" : "false", app->suppressed ? "true" : "false",
-        app->owner ? "true" : "false", mode);
+    gchar *json = g_strdup_printf("{\"enabled\":%s,\"configError\":%s,\"commands\":%s,\"active\":%s,"
+        "\"holding\":%s,\"suppressed\":%s,\"available\":%s,\"monitor\":%s}",
+        BOOL(app->enabled), BOOL(app->config_error), commands, names, BOOL(app->holding),
+        BOOL(app->suppressed), BOOL(app->owner), mode);
     g_free(names);
+    g_free(commands);
     free(mode);
-    gboolean written = !g_strcmp0(json, app->last_status) || g_file_set_contents(app->status, json, -1, error);
-    if (written) {
-        if (g_strcmp0(json, app->last_status)) g_printerr("omapower: state %s\n", json);
+    g_hash_table_unref(active);
+    gboolean ok = TRUE;
+    if (g_strcmp0(json, app->last_status)) {
+        g_printerr("omapower: state %s\n", json);
+        if (app->supervised) ok = printf("%s\n", json) > 0 && fflush(stdout) == 0;
         g_free(app->last_status);
         app->last_status = json;
     } else g_free(json);
-    g_hash_table_unref(active);
-    return written;
+    return ok;
 }
 
 static gboolean reconcile_idle(gpointer data) {
@@ -145,7 +160,7 @@ static void start_call(App *app, Operation operation) {
 static void reconcile(App *app) {
     gboolean running = process_watch_running(app->processes);
     if (!running) app->suppressed = FALSE;
-    gboolean wanted = running && !app->suppressed;
+    gboolean wanted = app->enabled && running && !app->suppressed;
     if (wanted && app->holding && app->retry_source) {
         remove_source(&app->retry_source);
         app->release_failures = 0;
@@ -154,11 +169,7 @@ static void reconcile(App *app) {
         if (wanted && !app->holding) start_call(app, ACQUIRING);
         else if (!wanted && app->holding) start_call(app, RELEASING);
     }
-    GError *error = NULL;
-    if (!write_status(app, &error)) {
-        fail(app, error->message);
-        g_error_free(error);
-    }
+    if (!report_status(app)) fail(app, "status output closed");
 }
 
 static void processes_changed(ProcessWatch *watch, const GError *error, gpointer data) {
@@ -223,18 +234,66 @@ static void profile_released(GDBusConnection *connection, const gchar *sender, c
     }
 }
 
+/* An invalid configuration watches nothing (dropping any hold) and is
+ * reported, so it can be fixed without restarting Omapower. */
+static GHashTable *read_configuration(App *app) {
+    GError *error = NULL;
+    gboolean enabled = TRUE;
+    GHashTable *commands = load_config(app->config, &enabled, &error);
+    app->config_error = !commands;
+    app->enabled = commands ? enabled : FALSE;
+    if (!commands) {
+        g_printerr("omapower: %s: %s; watching nothing until it is fixed\n", app->config, error->message);
+        g_error_free(error);
+        commands = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    }
+    if (app->commands) g_hash_table_unref(app->commands);
+    app->commands = g_hash_table_ref(commands);
+    return commands;
+}
+
 static void config_changed(const char *path, const GError *monitor_error, gpointer data) {
+    (void)path;
     App *app = data;
     if (app->stopping) return;
     if (monitor_error) { fail(app, monitor_error->message); return; }
     GError *error = NULL;
-    GHashTable *commands = load_commands(path, &error);
-    if (commands) {
-        process_watch_set_commands(app->processes, commands, &error);
-        g_hash_table_unref(commands);
-    }
+    GHashTable *commands = read_configuration(app);
+    process_watch_set_commands(app->processes, commands, &error);
+    g_hash_table_unref(commands);
     if (error) { fail(app, error->message); g_error_free(error); }
     else schedule_reconcile(app);
+}
+
+/* Supervised mode: the shell plugin holds our stdin. EOF means it is gone. */
+static gboolean stdin_ready(gint fd, GIOCondition condition, gpointer data) {
+    App *app = data;
+    char buffer[256];
+    ssize_t count = (condition & G_IO_IN) ? read(fd, buffer, sizeof buffer) : 0;
+    if (count > 0 || (count < 0 && (errno == EINTR || errno == EAGAIN))) return G_SOURCE_CONTINUE;
+    g_printerr("omapower: supervisor closed the pipe; exiting\n");
+    app->stdin_source = 0;
+    g_main_loop_quit(app->loop);
+    return G_SOURCE_REMOVE;
+}
+
+/* One daemon per user, however it was started. Wait briefly so a restart can
+ * replace an instance that is still releasing its hold. */
+static int acquire_lock(void) {
+    gchar *path = g_build_filename(g_get_user_runtime_dir(), "omapower.lock", NULL);
+    int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+    g_free(path);
+    if (fd < 0) {
+        g_printerr("omapower: lock: %s\n", g_strerror(errno));
+        return -1;
+    }
+    for (int attempt = 0; attempt < 50; attempt++) {
+        if (flock(fd, LOCK_EX | LOCK_NB) == 0) return fd;
+        if (errno != EWOULDBLOCK && errno != EINTR) break;
+        g_usleep(100000);
+    }
+    close(fd);
+    return -1;
 }
 
 static gboolean stop(gpointer data) {
@@ -242,25 +301,37 @@ static gboolean stop(gpointer data) {
     return G_SOURCE_CONTINUE; /* cleanup removes the signal sources */
 }
 
+static int usage(void) {
+    g_printerr("Usage: omapower [--supervised] [--poll]\n"
+               "       omapower --add NAME | --remove NAME | --enable | --disable\n");
+    return 2;
+}
+
 int main(int argc, char **argv) {
     if (argc == 3 && (!strcmp(argv[1], "--add") || !strcmp(argv[1], "--remove")))
         return edit_command(argv[1], argv[2]);
-    if (argc == 2 && !strcmp(argv[1], "--watch-widget")) return watch_widget();
-    gboolean force_poll = argc == 2 && !strcmp(argv[1], "--poll");
-    if (argc != 1 && !force_poll) {
-        g_printerr("Usage: omapower [--poll | --watch-widget | --add NAME | --remove NAME]\n");
-        return 2;
-    }
+    if (argc == 2 && (!strcmp(argv[1], "--enable") || !strcmp(argv[1], "--disable")))
+        return edit_command(argv[1], NULL);
     App app = {0};
+    gboolean force_poll = FALSE;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--poll") && !force_poll) force_poll = TRUE;
+        else if (!strcmp(argv[i], "--supervised") && !app.supervised) app.supervised = TRUE;
+        else return usage();
+    }
+    int lock = acquire_lock();
+    if (lock < 0) {
+        g_printerr("omapower: another Omapower instance is already running\n");
+        return EXIT_BUSY;
+    }
     GError *error = NULL;
     guint term = 0, interrupt = 0;
+    if (app.supervised) signal(SIGPIPE, SIG_IGN); /* report a closed stdout as an error */
     app.config = g_build_filename(g_get_user_config_dir(), "omapower", "config.json", NULL);
-    app.status = g_build_filename(g_get_user_runtime_dir(), "omapower.json", NULL);
     app.loop = g_main_loop_new(NULL, FALSE);
     app.config_watch = config_watch_new(app.config, config_changed, &app, &error);
     if (!app.config_watch) goto failure;
-    GHashTable *commands = load_commands(app.config, &error);
-    if (!commands) goto failure;
+    GHashTable *commands = read_configuration(&app);
     app.processes = process_watch_new(commands, force_poll, processes_changed, &app, &error);
     g_hash_table_unref(commands);
     if (!app.processes) goto failure;
@@ -274,6 +345,8 @@ int main(int argc, char **argv) {
                                                    appeared, vanished, &app, NULL);
     term = g_unix_signal_add(SIGTERM, stop, &app);
     interrupt = g_unix_signal_add(SIGINT, stop, &app);
+    if (app.supervised)
+        app.stdin_source = g_unix_fd_add(STDIN_FILENO, G_IO_IN | G_IO_HUP | G_IO_ERR, stdin_ready, &app);
     schedule_reconcile(&app);
     g_main_loop_run(app.loop);
     goto done;
@@ -286,6 +359,7 @@ done:
     remove_source(&interrupt);
     remove_source(&app.reconcile_source);
     remove_source(&app.retry_source);
+    remove_source(&app.stdin_source);
     config_watch_free(app.config_watch);
     process_watch_free(app.processes);
     if (app.name_watch) g_bus_unwatch_name(app.name_watch);
@@ -298,8 +372,9 @@ done:
         while (app.pending != IDLE) g_main_context_iteration(NULL, TRUE);
         g_object_unref(app.bus);
     }
-    if (app.last_status) unlink(app.status);
     g_main_loop_unref(app.loop);
-    g_free(app.config); g_free(app.status); g_free(app.last_status); g_free(app.owner);
+    if (app.commands) g_hash_table_unref(app.commands);
+    g_free(app.config); g_free(app.last_status); g_free(app.owner);
+    close(lock);
     return app.exit_status;
 }

@@ -9,6 +9,8 @@
 typedef struct ConfigWatch ConfigWatch;
 typedef void (*ConfigChanged)(const char *path, const GError *error, gpointer data);
 
+/* load_config reports the "enabled" flag (default TRUE); load_commands ignores it. */
+GHashTable *load_config(const char *path, gboolean *enabled, GError **error);
 GHashTable *load_commands(const char *path, GError **error);
 int edit_command(const char *action, const char *name);
 ConfigWatch *config_watch_new(const char *path, ConfigChanged changed, gpointer data, GError **error);
@@ -25,9 +27,6 @@ GHashTable *process_watch_active(ProcessWatch *watch); /* caller owns the return
 gboolean process_watch_running(ProcessWatch *watch);
 const char *process_watch_mode(ProcessWatch *watch);
 void process_watch_free(ProcessWatch *watch);
-
-/* Stream service state and configuration as newline-delimited JSON. */
-int watch_widget(void);
 
 static inline void remove_source(guint *source) {
     if (*source) g_source_remove(*source);

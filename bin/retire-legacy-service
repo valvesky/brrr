@@ -1,0 +1,21 @@
+#!/bin/sh
+# Retire the systemd user service written by Omapower's former setup.sh, once.
+# The shell plugin now supervises Omapower. Only a unit that runs the binary
+# setup.sh installed is touched; hand-written standalone units and the command
+# list in $XDG_CONFIG_HOME/omapower are left alone.
+set -u
+data=${XDG_DATA_HOME:-$HOME/.local/share}/omapower
+unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/omapower.service
+
+[ -f "$unit" ] || exit 0
+# setup.sh escaped \ " % $ in ExecStart for systemd; match that exact line.
+exec_path=$(printf '%s\n' "$data/omapower" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g' -e 's/\$/$$/g')
+grep -qxF "ExecStart=\"$exec_path\"" "$unit" || exit 0
+
+# Stopping the old daemon releases its power-profile hold. If systemd is
+# unreachable, keep everything so the next start retries.
+systemctl --user disable --now omapower.service || exit 1
+rm -f -- "$unit" "$data/omapower" "$data/setup-complete" "$data/setup.lock"
+rmdir -- "$data" 2>/dev/null
+systemctl --user daemon-reload || true
+echo "retired the systemd service from the previous Omapower setup" >&2

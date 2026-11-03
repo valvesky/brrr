@@ -1,0 +1,95 @@
+name: Binaries
+
+# Rebuild the prebuilt helpers in bin/ whenever the C sources change, and
+# commit them so `omarchy plugin add` installs a ready-to-run plugin.
+on:
+  push:
+    branches: [master]
+    paths:
+      - '*.c'
+      - '*.h'
+      - 'vendor/**'
+      - 'Makefile'
+      - 'scripts/build-release.sh'
+      - '.github/workflows/binaries.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binaries
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-dev pkg-config
+      - run: sh scripts/build-release.sh
+      - run: make tests/test_config && ./tests/test_config
+      - uses: actions/upload-artifact@v7
+        with:
+          name: omapower-${{ matrix.arch }}
+          path: bin/omapower-${{ matrix.arch }}
+          if-no-files-found: error
+
+  commit:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # Commit on top of the current master, which may have moved on since
+      # the triggering push, but only if its sources still match the build.
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Check sources are unchanged since the build
+        id: sources
+        run: |
+          if git diff --quiet "$GITHUB_SHA" HEAD -- '*.c' '*.h' vendor Makefile scripts/build-release.sh; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Sources changed after $GITHUB_SHA; the newer push rebuilds the binaries."
+          fi
+      - uses: actions/download-artifact@v8
+        if: steps.sources.outputs.current == 'true'
+        with:
+          path: bin
+          merge-multiple: true
+      - name: Commit updated binaries
+        if: steps.sources.outputs.current == 'true'
+        run: |
+          chmod 755 bin/omapower-*
+          git add bin/omapower-x86_64 bin/omapower-aarch64
+          if git diff --cached --quiet; then
+            echo "Binaries are up to date."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Update prebuilt helper binaries for ${GITHUB_SHA::7}"
+          # master may move again (e.g. a docs-only push, which triggers no
+          # rebuild): rebase onto it while its sources still match the build.
+          for attempt in 1 2 3 4 5; do
+            git push origin HEAD:master && exit 0
+            git fetch origin master
+            if ! git diff --quiet "$GITHUB_SHA" origin/master -- '*.c' '*.h' vendor Makefile scripts/build-release.sh; then
+              echo "Sources changed after $GITHUB_SHA; the newer push rebuilds the binaries."
+              exit 0
+            fi
+            git rebase origin/master
+          done
+          echo "Could not push after 5 attempts." >&2
+          exit 1

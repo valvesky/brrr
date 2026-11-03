@@ -65,32 +65,57 @@ static GHashTable *default_commands(void) {
     return names;
 }
 
-GHashTable *load_commands(const char *path, GError **error) {
+/* A missing "enabled" member means automatic boost is on. */
+static gboolean enabled_from_json(struct json_value_s *root, gboolean *enabled, GError **error) {
+    struct json_value_s *node = json_member(root, "enabled");
+    if (!node || json_value_is_true(node)) *enabled = TRUE;
+    else if (json_value_is_false(node)) *enabled = FALSE;
+    else {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "enabled must be true or false");
+        return FALSE;
+    }
+    return TRUE;
+}
+
+GHashTable *load_config(const char *path, gboolean *enabled, GError **error) {
     /* Use a local error too: callers may pass NULL for their error output. */
     GError *local_error = NULL;
+    gboolean on = TRUE;
     struct json_value_s *root = read_config(path, &local_error);
     if (!root) {
         if (g_error_matches(local_error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
             g_clear_error(&local_error);
+            if (enabled) *enabled = TRUE;
             return default_commands();
         }
         g_propagate_error(error, local_error);
         return NULL;
     }
-    GHashTable *names = commands_from_json(root, error);
+    GHashTable *names = enabled_from_json(root, &on, error) ? commands_from_json(root, error) : NULL;
     free(root);
+    if (names && enabled) *enabled = on;
     return names;
 }
 
-/* Preserve unrelated fields, including nested values and exact number tokens. */
-static gchar *encode_config(struct json_value_s *root, GHashTable *names) {
+GHashTable *load_commands(const char *path, GError **error) {
+    return load_config(path, NULL, error);
+}
+
+static gboolean member_is(const struct json_object_element_s *p, const char *name) {
+    return p->name->string_size == strlen(name) && !memcmp(p->name->string, name, strlen(name));
+}
+
+/* Preserve unrelated fields, including nested values and exact number tokens.
+ * enabled < 0 keeps the existing "enabled" member unchanged. */
+static gchar *encode_config(struct json_value_s *root, GHashTable *names, int enabled) {
     gchar *commands = json_names(names);
     GString *output = g_string_new("{\"commands\":");
     g_string_append(output, commands);
     g_free(commands);
+    if (enabled >= 0) g_string_append(output, enabled ? ",\"enabled\":true" : ",\"enabled\":false");
     struct json_object_s *object = json_value_as_object(root);
     for (struct json_object_element_s *p = object->start; p; p = p->next) {
-        if (p->name->string_size == 8 && !memcmp(p->name->string, "commands", 8)) continue;
+        if (member_is(p, "commands") || (enabled >= 0 && member_is(p, "enabled"))) continue;
         struct json_value_s key = { p->name, json_type_string };
         char *name = json_write_minified(&key, NULL);
         char *value = json_write_minified(p->value, NULL);
@@ -105,7 +130,9 @@ static gchar *encode_config(struct json_value_s *root, GHashTable *names) {
 
 int edit_command(const char *action, const char *name) {
     GError *error = NULL;
-    if (!name || !*name || strlen(name) > 15 || strchr(name, '/') || strchr(name, '\n') || !g_utf8_validate(name, -1, NULL)) {
+    int enabled = !strcmp(action, "--enable") ? 1 : !strcmp(action, "--disable") ? 0 : -1;
+    if (enabled < 0 && (!name || !*name || strlen(name) > 15 || strchr(name, '/') || strchr(name, '\n')
+                        || !g_utf8_validate(name, -1, NULL))) {
         g_printerr("omapower: invalid command name\n");
         return 1;
     }
@@ -127,12 +154,14 @@ int edit_command(const char *action, const char *name) {
         root = json_parse("{}", 2);
         if (!root) g_error("cannot allocate JSON configuration");
     } else if (root) {
-        names = commands_from_json(root, &error);
+        /* Refuse to rewrite a configuration that is invalid in any field. */
+        gboolean ignored;
+        if (enabled_from_json(root, &ignored, &error)) names = commands_from_json(root, &error);
     }
     if (!names) goto failure;
     if (strcmp(action, "--add") == 0) g_hash_table_add(names, g_strdup(name));
-    else g_hash_table_remove(names, name);
-    output = encode_config(root, names);
+    else if (strcmp(action, "--remove") == 0) g_hash_table_remove(names, name);
+    output = encode_config(root, names, enabled);
     if (!g_file_set_contents(path, output, -1, &error)) goto failure;
     rc = 0;
     goto done;

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Run the prebuilt Omapower helper for this machine's architecture.
+# The binaries are built by CI (.github/workflows/binaries.yml); see docs/guide.md.
+here=$(dirname -- "$0")
+case $(uname -m) in
+  x86_64) arch=x86_64 ;;
+  aarch64 | arm64) arch=aarch64 ;;
+  *) arch= ;;
+esac
+if [ -z "$arch" ] || [ ! -x "$here/omapower-$arch" ]; then
+  echo "omapower: no prebuilt binary for $(uname -m); build from source with make" >&2
+  exit 69
+fi
+exec "$here/omapower-$arch" "$@"
