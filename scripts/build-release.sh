@@ -47,6 +47,12 @@ case $os in
     out=dist/omapower-windows-$arch.exe
     cp "target/$target/release/omapower.exe" "$out"
     smoke "$out"
+    # Clean Windows installs lack the Visual C++ runtime; .cargo/config.toml
+    # links it statically, so the .exe must not import it.
+    if grep -qai 'vcruntime140' "$out"; then
+      echo "$out: imports VCRUNTIME140.dll; the C runtime must be linked statically" >&2
+      exit 1
+    fi
     ;;
   macos)
     for target in aarch64-apple-darwin x86_64-apple-darwin; do
