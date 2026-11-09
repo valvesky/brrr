@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "raw.omapower",
   "name": "Omapower",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Automatically boost to the performance profile while chosen commands run",
   "author": "raw",
   "kinds": [
