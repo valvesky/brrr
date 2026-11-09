@@ -1,29 +1,20 @@
+# Omapower is a Rust program; this Makefile builds the binary for this machine
+# and runs every test. Cross-platform release builds: scripts/build-release.sh.
+CARGO ?= cargo
 CC ?= cc
 PYTHON ?= /usr/bin/python3
 NODE ?= node
-PKGS = gio-2.0 gio-unix-2.0
-CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
-CPPFLAGS += $(shell pkg-config --cflags $(PKGS))
-LDLIBS += $(shell pkg-config --libs $(PKGS))
 
-SOURCES = omapower.c config.c process-watch.c
-HEADERS = omapower.h json-util.h vendor/json.h
+.PHONY: omapower test clean
+omapower:
+	$(CARGO) build --release
+	cp target/release/omapower omapower
 
-# OMAPOWER_OUT (environment) redirects the binary; scripts/build-release.sh uses it
-# to build the prebuilt bin/omapower-$(uname -m) helpers.
-omapower: $(SOURCES) $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o "$${OMAPOWER_OUT:-$@}" omapower.c $(LDLIBS)
+tests/thread-group: tests/thread-group.c
+	$(CC) -O2 -Wall -Wextra -pthread -o $@ $<
 
-tests/test_config: tests/test_config.c config.c $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< config.c $(LDLIBS)
-
-tests/test_process: tests/test_process.c process-watch.c $(HEADERS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
-
-.PHONY: test clean
-test: omapower tests/test_config tests/test_process
-	./tests/test_config
-	./tests/test_process
+test: omapower tests/thread-group
+	$(CARGO) test --release
 	sh tests/test_edit.sh
 	$(PYTHON) tests/test_json.py
 	$(NODE) tests/test_whitelist.js
@@ -31,4 +22,5 @@ test: omapower tests/test_config tests/test_process
 	dbus-run-session -- $(PYTHON) tests/test_daemon.py ./omapower
 
 clean:
-	rm -f omapower tests/test_config tests/test_process
+	$(CARGO) clean
+	rm -f omapower tests/thread-group
