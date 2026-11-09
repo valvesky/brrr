@@ -33,11 +33,12 @@ download `omapower-linux-x86_64.tar.gz` (or `aarch64`) from the
 `omapower --install` to show it in your tray at every login. It needs power-profiles-daemon (or tuned-ppd),
 which most distributions include.
 
-**Windows 10 and 11**: download `omapower-windows-x86_64.exe` (or `aarch64`) and run it. Choose
-*Start at login* from its icon in the notification area.
+**Windows 10 and 11**: download `omapower-windows-setup.exe` from the
+[releases](https://github.com/valvesky/omapower/releases) and run it. It needs no administrator
+rights, and it starts Omapower when you sign in unless you untick that.
 
-**macOS 12 or later**: download `omapower-macos.zip`, move *Omapower.app* to Applications and open
-it. Choose *Allow Power Mode Switching…* from its menu bar icon and enter your password once.
+**macOS 12 or later**: download `omapower-macos.dmg`, open it and drag *Omapower* to Applications.
+Open it, choose *Allow Power Mode Switching…* from its menu bar icon and enter your password once.
 
 ## What you get
 

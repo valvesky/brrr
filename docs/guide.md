@@ -82,24 +82,33 @@ stop, run `systemctl --user disable --now omapower`, remove the unit file and ru
 
 ### Windows
 
-Download `omapower-windows-x86_64.exe` (or `omapower-windows-aarch64.exe` for ARM) from the
-[releases](https://github.com/valvesky/omapower/releases), put it somewhere it can stay and run it.
-Its icon appears in the notification area (you may have to drag it out of the overflow). Choose
-*Start at login* from its menu, or run `omapower --install`, to start it with Windows.
+Download `omapower-windows-setup.exe` from the
+[releases](https://github.com/valvesky/omapower/releases) and run it. One setup file covers x64 and
+ARM PCs. It installs for your account only, under `%LOCALAPPDATA%\Programs\Omapower`, so it needs
+no administrator rights. It adds Omapower to the Start menu and, unless you untick it, starts
+Omapower whenever you sign in. Its icon appears in the notification area (you may have to drag it
+out of the overflow). *Start at login* in its menu turns the sign-in start on or off later.
+
+Prefer no installer? `omapower-windows-x86_64.exe` and `omapower-windows-aarch64.exe` are the same
+program on their own: put one somewhere it can stay and run it, and use *Start at login* (or
+`omapower --install`).
 
 It switches the *Power mode* you find under Settings › System › Power & battery, the same setting
 as the slider, and needs no administrator rights. Windows 10 (1809 or later) and Windows 11 are
 supported. The icon follows the taskbar's light or dark theme and shows the current mode.
 
-To remove it, turn off *Start at login* (or run `omapower --uninstall`), choose *Quit* and delete
+To remove it, uninstall *Omapower* from Settings › Apps. The uninstaller quits it first, so it can
+put back the power mode, and removes the sign-in entry. Your command list stays in
+`%APPDATA%\omapower`. Without the installer: turn off *Start at login*, choose *Quit* and delete
 the file.
 
 ### macOS
 
-Download `omapower-macos.zip` from the [releases](https://github.com/valvesky/omapower/releases),
-move *Omapower.app* to Applications and open it. The app isn't notarized, so the first time
-macOS asks: right-click it, choose *Open*, then *Open* again (or allow it under System Settings ›
-Privacy & Security). It runs as a menu bar icon, without a Dock icon.
+Download `omapower-macos.dmg` from the [releases](https://github.com/valvesky/omapower/releases),
+open it and drag *Omapower* onto *Applications*, then open it from there. The app isn't notarized,
+so the first time macOS asks: right-click it, choose *Open*, then *Open* again (or allow it under
+System Settings › Privacy & Security). It runs as a menu bar icon, without a Dock icon. The app
+is universal: one download for Apple Silicon and Intel Macs.
 
 macOS has no setting an app can change without administrator rights: Low Power Mode and High
 Power Mode are switched with `pmset`, which needs root. Choose *Allow Power Mode Switching…* from
@@ -271,8 +280,14 @@ watcher, power backend and status icon. Building on a system builds that system'
 cargo build --release      # target/release/omapower
 ```
 
-`scripts/build-release.sh linux|windows|macos` builds the release binaries: static (musl) Linux
-binaries for the Omarchy plugin, a Windows executable, and a universal macOS app bundle.
+`scripts/build-release.sh` builds the release packages, each on its own system:
+
+- `linux`: static (musl) Linux binaries, used by the Omarchy plugin too.
+- `windows`: the Windows executable for this machine's architecture.
+- `windows-installer`: `omapower-windows-setup.exe` from both Windows executables, with
+  [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or newer. The script is
+  `installer/windows/omapower.iss`.
+- `macos`: a universal app bundle with its icon, and the `omapower-macos.dmg` disk image.
 
 `make test` runs the Rust unit tests, the command-line and JSON compatibility tests, the widget's
 JavaScript tests and the isolated D-Bus integration tests on Linux, including a headless Quickshell
@@ -287,5 +302,8 @@ widget's look in Omarchy separately. On Windows and macOS, `cargo test` runs the
 [Binaries workflow](../.github/workflows/binaries.yml) rebuilds and tests both whenever the
 sources change on `master`, checks that Windows and macOS still build, and commits the Linux
 binaries for the Omarchy plugin. The [Release workflow](../.github/workflows/release.yml) builds
-every platform on that platform when a `v*` tag is pushed, and attaches the results to a GitHub
-release.
+every platform on that platform when a `v*` tag is pushed, builds the Windows installer from both
+Windows binaries, and attaches the results to a GitHub release.
+
+The app icon is `assets/icon/omapower-1024.png` (with `omapower.ico` for Windows): Font Awesome's
+bolt (CC BY 4.0), like the tray icons.
