@@ -121,22 +121,51 @@ fn open_config() {
     let _ = Command::new("xdg-open").arg(path).stdin(Stdio::null()).spawn();
 }
 
-pub fn autostart_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
+fn config_home() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));
-    base.join("autostart/omapower.desktop")
+        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"))
+}
+
+fn data_home() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share"))
+}
+
+pub fn autostart_path() -> PathBuf {
+    config_home().join("autostart/omapower.desktop")
+}
+
+/// The flat app icon, in the user's icon theme, so desktops show it for the
+/// login entry (GNOME Tweaks, KDE's Autostart settings, …).
+pub fn icon_path() -> PathBuf {
+    data_home().join("icons/hicolor/scalable/apps/omapower.svg")
+}
+
+const ICON: &[u8] = include_bytes!("../../assets/icon/omapower.svg");
+
+fn remove(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(format!("{}: {error}", path.display())),
+        _ => Ok(()),
+    }
+}
+
+fn write(path: &std::path::Path, contents: &[u8]) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    }
+    std::fs::write(path, contents).map_err(|error| format!("{}: {error}", path.display()))
 }
 
 /// Start the tray at login through the XDG autostart directory.
 pub fn set_autostart(enabled: bool) -> Result<(), String> {
     let path = autostart_path();
     if !enabled {
-        return match std::fs::remove_file(&path) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
-            _ => Ok(()),
-        };
+        return remove(&path).and(remove(&icon_path()));
     }
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     // Desktop entry Exec quoting: escape \ " ` $ inside double quotes.
@@ -145,13 +174,14 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
     }).collect();
     let entry = format!(
         "[Desktop Entry]\nType=Application\nName=Omapower\nComment=Full power while you compile\n\
-         Exec=\"{quoted}\" --tray\nIcon=power-profile-performance-symbolic\nTerminal=false\n\
+         Exec=\"{quoted}\" --tray\nIcon=omapower\nTerminal=false\n\
          X-GNOME-Autostart-enabled=true\n"
     );
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    // The icon is a nicety: a login item without it still works.
+    if let Err(error) = write(&icon_path(), ICON) {
+        eprintln!("omapower: icon: {error}");
     }
-    std::fs::write(&path, entry).map_err(|error| error.to_string())
+    write(&path, entry.as_bytes())
 }
 
 impl ksni::Tray for Tray {
