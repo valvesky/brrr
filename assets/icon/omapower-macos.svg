@@ -30,14 +30,14 @@
       <stop offset="0.45" stop-color="#d4f57a"/>
       <stop offset="1" stop-color="#97c934"/>
     </linearGradient>
+    <!-- A smooth fade, not a hard stop: a stop line shows as a seam across the arms -->
     <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.65"/>
-      <stop offset="0.48" stop-color="#ffffff" stop-opacity="0.12"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="0.7" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
     <filter id="tile-shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="20"/></filter>
     <filter id="halo" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="44"/></filter>
-    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="12"/></filter>
   </defs>
 
   <!-- Shadow under the tile -->
@@ -47,9 +47,9 @@
     <!-- Dark tinted glass with light gathered behind the bolt -->
     <rect x="100" y="100" width="824" height="824" fill="url(#body)"/>
     <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
-    <!-- The bolt: halo, cast shadow, body, gloss -->
+    <!-- The bolt: halo, body, gloss. No cast shadow: beside the halo it reads
+         as dark smears along the bolt's diagonal edges. -->
     <use xlink:href="#glyph" fill="#d4f57a" opacity="0.55" filter="url(#halo)"/>
-    <use xlink:href="#glyph" fill="#000000" opacity="0.45" filter="url(#drop)" transform="translate(0 18)"/>
     <use xlink:href="#glyph" fill="url(#fill)"/>
     <use xlink:href="#glyph" fill="url(#gloss)"/>
     <!-- Curved specular sheen across the upper glass -->
