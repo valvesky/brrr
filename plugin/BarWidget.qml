@@ -128,11 +128,12 @@ BarWidget {
         id: button
         anchors.fill: parent
         bar: root.bar
-        // Font Awesome glyphs follow the bar foreground instead of emoji rendering.
-        fontFamily: "Font Awesome 7 Free Solid"
+        // Icons come from the bar's own Nerd Font, like Omarchy's built-in
+        // widgets: bolt, yin-yang, recycle, or a question mark.
         centerFigures: false
-        text: root.powerProfile === "performance" ? ""
-            : root.powerProfile === "balanced" ? "" : root.powerProfile === "power-saver" ? "" : ""
+        text: root.powerProfile === "performance" ? "\uf0e7"
+            : root.powerProfile === "balanced" ? "\udb81\ude80"
+            : root.powerProfile === "power-saver" ? "\uf1b8" : "\uf059"
         tooltipText: root.description
         onPressed: function(buttonCode) { if (buttonCode === Qt.LeftButton) root.toggle() }
     }

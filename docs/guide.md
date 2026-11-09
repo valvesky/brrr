@@ -11,8 +11,8 @@ omarchy plugin add https://github.com/valvesky/omapower.git --enable
 That's all. After Omarchy's confirmation, automatic boost starts: the plugin ships
 prebuilt helpers for x86_64 and aarch64, so there is nothing to build and no
 packages to install on a current Omarchy system (it needs GLib and
-power-profiles-daemon, which Omarchy includes). The widget also needs
-Font Awesome 7 Free Solid.
+power-profiles-daemon, which Omarchy includes). The widget's icons come
+from the bar's Nerd Font.
 
 On other architectures, run `make` in `~/.config/omarchy/plugins/raw.omapower`
 (see the build requirements under standalone mode below), then restart the
