@@ -44,7 +44,7 @@ Download `omapower-linux-x86_64.tar.gz` or `omapower-linux-aarch64.tar.gz` from 
 runs on any distribution. Put it on your `PATH` as `omapower`, then:
 
 ```sh
-omapower --install   # show the tray icon at every login, from now on
+omapower --install   # show the tray icon at every login, from now on (and add its app icon)
 omapower --tray &    # and right now
 ```
 
@@ -305,5 +305,13 @@ binaries for the Omarchy plugin. The [Release workflow](../.github/workflows/rel
 every platform on that platform when a `v*` tag is pushed, builds the Windows installer from both
 Windows binaries, and attaches the results to a GitHub release.
 
-The app icon is `assets/icon/omapower-1024.png` (with `omapower.ico` for Windows): Font Awesome's
-bolt (CC BY 4.0), like the tray icons.
+The app icons are Font Awesome's bolt (CC BY 4.0), like the tray icons, drawn as SVG in
+`assets/icon`: `omapower.svg` is the flat icon for Windows and Linux, and `omapower-macos.svg` the
+glass one for macOS. After changing one, render it again:
+
+```sh
+resvg -w 1024 -h 1024 assets/icon/omapower.svg assets/icon/omapower-1024.png
+resvg -w 1024 -h 1024 assets/icon/omapower-macos.svg assets/icon/omapower-macos-1024.png
+for size in 16 24 32 48 64 128 256; do resvg -w $size -h $size assets/icon/omapower.svg icon-$size.png; done
+magick icon-256.png icon-128.png icon-64.png icon-48.png icon-32.png icon-24.png icon-16.png assets/icon/omapower.ico
+```

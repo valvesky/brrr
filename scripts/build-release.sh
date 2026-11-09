@@ -16,10 +16,12 @@ set -eu
 cd "$(dirname -- "$0")/.."
 os=${1:?usage: scripts/build-release.sh linux|windows|windows-installer|macos}
 
-case $(uname -m) in
+# OMAPOWER_ARCH overrides the detected architecture (x86_64 or aarch64), e.g.
+# where an emulated shell reports x86_64 on an ARM machine.
+case ${OMAPOWER_ARCH:-$(uname -m)} in
   x86_64 | amd64 | AMD64) arch=x86_64 ;;
   aarch64 | arm64 | ARM64) arch=aarch64 ;;
-  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+  *) echo "unsupported architecture: ${OMAPOWER_ARCH:-$(uname -m)}" >&2; exit 1 ;;
 esac
 
 # Argument errors exit 2 before touching anything: a cheap smoke test.
@@ -57,14 +59,14 @@ case $os in
       target/aarch64-apple-darwin/release/omapower target/x86_64-apple-darwin/release/omapower
     version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
 
-    # The app icon, at every size Finder and the Dock ask for.
+    # The glass app icon (omapower-macos.svg), at every size Finder and the Dock ask for.
     iconset=dist/omapower.iconset
     rm -rf "$iconset"
     mkdir -p "$iconset"
     for size in 16 32 128 256 512; do
-      sips -z "$size" "$size" assets/icon/omapower-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+      sips -z "$size" "$size" assets/icon/omapower-macos-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
       double=$((size * 2))
-      sips -z "$double" "$double" assets/icon/omapower-1024.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+      sips -z "$double" "$double" assets/icon/omapower-macos-1024.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
     done
     iconutil -c icns "$iconset" -o "$app/Contents/Resources/omapower.icns"
     rm -rf "$iconset"
