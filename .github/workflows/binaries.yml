@@ -1,15 +1,16 @@
 name: Binaries
 
-# Rebuild the prebuilt helpers in bin/ whenever the C sources change, and
-# commit them so `omarchy plugin add` installs a ready-to-run plugin.
+# Rebuild the static Linux binaries in bin/ whenever the sources change, test
+# them, and commit them so `omarchy plugin add` installs a ready-to-run plugin.
 on:
   push:
     branches: [master]
     paths:
-      - '*.c'
-      - '*.h'
-      - 'vendor/**'
-      - 'Makefile'
+      - 'src/**'
+      - 'assets/tray/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - 'scripts/build-release.sh'
       - '.github/workflows/binaries.yml'
   workflow_dispatch:
@@ -20,6 +21,9 @@ permissions:
 concurrency:
   group: binaries
   cancel-in-progress: true
+
+env:
+  SOURCES: src assets/tray build.rs Cargo.toml Cargo.lock scripts/build-release.sh
 
 jobs:
   build:
@@ -34,17 +38,36 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-dev pkg-config
-      - run: sh scripts/build-release.sh
-      - run: make tests/test_config && ./tests/test_config
+      - run: rustup target add ${{ matrix.arch }}-unknown-linux-musl
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus python3-gi jq
+      - run: sh scripts/build-release.sh linux
+      - run: cargo test --release --locked
+      - name: Integration tests
+        run: |
+          cc -O2 -Wall -Wextra -pthread -o tests/thread-group tests/thread-group.c
+          cp bin/omapower-${{ matrix.arch }} omapower
+          sh tests/test_edit.sh
+          python3 tests/test_json.py
+          dbus-run-session -- python3 tests/test_daemon.py ./omapower
       - uses: actions/upload-artifact@v7
         with:
           name: omapower-${{ matrix.arch }}
           path: bin/omapower-${{ matrix.arch }}
           if-no-files-found: error
 
+  check:
+    # Windows and macOS are released by release.yml; make sure they still build.
+    name: Check ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: cargo test --release --locked
+
   commit:
-    needs: build
+    needs: [build, check]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -58,7 +81,7 @@ jobs:
       - name: Check sources are unchanged since the build
         id: sources
         run: |
-          if git diff --quiet "$GITHUB_SHA" HEAD -- '*.c' '*.h' vendor Makefile scripts/build-release.sh; then
+          if git diff --quiet "$GITHUB_SHA" HEAD -- $SOURCES; then
             echo "current=true" >> "$GITHUB_OUTPUT"
           else
             echo "Sources changed after $GITHUB_SHA; the newer push rebuilds the binaries."
@@ -79,13 +102,13 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
-          git commit -m "Update prebuilt helper binaries for ${GITHUB_SHA::7}"
+          git commit -m "Update prebuilt Linux binaries for ${GITHUB_SHA::7}"
           # master may move again (e.g. a docs-only push, which triggers no
           # rebuild): rebase onto it while its sources still match the build.
           for attempt in 1 2 3 4 5; do
             git push origin HEAD:master && exit 0
             git fetch origin master
-            if ! git diff --quiet "$GITHUB_SHA" origin/master -- '*.c' '*.h' vendor Makefile scripts/build-release.sh; then
+            if ! git diff --quiet "$GITHUB_SHA" origin/master -- $SOURCES; then
               echo "Sources changed after $GITHUB_SHA; the newer push rebuilds the binaries."
               exit 0
             fi

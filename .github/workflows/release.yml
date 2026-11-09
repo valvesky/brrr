@@ -1,0 +1,78 @@
+name: Release
+
+# On a version tag, build every platform's native binary on that platform and
+# attach them to a GitHub release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      matrix:
+        include:
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            setup: rustup target add x86_64-unknown-linux-musl
+            build: sh scripts/build-release.sh linux
+            package: mkdir -p pkg && cp bin/omapower-x86_64 pkg/omapower && tar -C pkg -czf omapower-linux-x86_64.tar.gz omapower
+            asset: omapower-linux-x86_64.tar.gz
+          - name: Linux aarch64
+            runner: ubuntu-24.04-arm
+            setup: rustup target add aarch64-unknown-linux-musl
+            build: sh scripts/build-release.sh linux
+            package: mkdir -p pkg && cp bin/omapower-aarch64 pkg/omapower && tar -C pkg -czf omapower-linux-aarch64.tar.gz omapower
+            asset: omapower-linux-aarch64.tar.gz
+          - name: Windows x86_64
+            runner: windows-latest
+            setup: rustup target add x86_64-pc-windows-msvc
+            build: sh scripts/build-release.sh windows
+            package: cp dist/omapower-windows-x86_64.exe omapower-windows-x86_64.exe
+            asset: omapower-windows-x86_64.exe
+          - name: Windows ARM64
+            runner: windows-11-arm
+            setup: rustup target add aarch64-pc-windows-msvc
+            build: sh scripts/build-release.sh windows
+            package: cp dist/omapower-windows-aarch64.exe omapower-windows-aarch64.exe
+            asset: omapower-windows-aarch64.exe
+          - name: macOS
+            runner: macos-latest
+            setup: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+            build: sh scripts/build-release.sh macos
+            package: ditto -c -k --keepParent dist/Omapower.app omapower-macos.zip
+            asset: omapower-macos.zip
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: ${{ matrix.setup }}
+      - run: cargo test --release --locked
+      - run: ${{ matrix.build }}
+      - run: ${{ matrix.package }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" assets/* --repo "$GITHUB_REPOSITORY" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

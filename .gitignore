@@ -1,5 +1,5 @@
 /omapower
-/tests/test_config
-/tests/test_process
+/target
+/tests/thread-group
 __pycache__/
 *.pyc

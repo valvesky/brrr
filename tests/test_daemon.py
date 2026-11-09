@@ -362,7 +362,7 @@ class Lifecycle(unittest.TestCase):
         except (AttributeError, OSError):
             self.skipTest('pidfds are unavailable')
         os.close(fd)
-        child = subprocess.Popen([str(Path(__file__).with_name('test_process')), '--thread-group'],
+        child = subprocess.Popen([str(Path(__file__).with_name('thread-group'))],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.children.append(child)
         self.assertEqual(child.stdout.readline().strip(), 'ready')
