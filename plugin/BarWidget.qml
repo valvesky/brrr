@@ -31,6 +31,7 @@ BarWidget {
     property bool configError: false
     property bool holding: false
     property bool suppressed: false
+    property bool rejected: false
     property bool daemonAvailable: false
     property string detectionMode: ""
     property var commands: []
@@ -48,6 +49,7 @@ BarWidget {
         : !boostEnabled ? strings.t("status.off")
         : !daemonAvailable ? strings.t("status.daemonMissing")
         : holding ? strings.t("status.holding")
+        : rejected ? strings.t("status.rejected")
         : suppressed ? strings.t("status.manual") : strings.t("status.idle"))
         + (statusValid && running && boostEnabled && detectionMode === "polling" ? " — " + strings.t("status.polling") : "")
 
@@ -69,6 +71,7 @@ BarWidget {
             boostEnabled = state.enabled
             holding = state.holding
             suppressed = state.suppressed === true
+            rejected = state.rejected === true
             daemonAvailable = state.available === true
             detectionMode = typeof state.monitor === "string" ? state.monitor : ""
             commands = whitelist && !configError ? whitelist.commands : []

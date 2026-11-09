@@ -10,6 +10,7 @@
   "status.configError": "Configuration is invalid; nothing is watched until it is fixed",
   "status.off": "Off",
   "status.holding": "Performance requested",
+  "status.rejected": "power-profiles-daemon refused the performance profile. Check the shell journal.",
   "status.manual": "Manual profile selection respected",
   "status.idle": "Watching for commands",
   "status.daemonMissing": "Waiting for power-profiles-daemon",

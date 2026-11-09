@@ -14,6 +14,10 @@ packages to install on a current Omarchy system (it needs GLib and
 power-profiles-daemon, which Omarchy includes). The widget also needs
 Font Awesome 7 Free Solid.
 
+On other architectures, run `make` in `~/.config/omarchy/plugins/raw.omapower`
+(see the build requirements under standalone mode below), then restart the
+Omarchy shell: the plugin uses that build when no prebuilt helper fits.
+
 The plugin's background service runs one helper for as long as the Omarchy shell
 runs, however many bars show the widget. The widget shows whether automatic
 boost is on, its status and the watched commands. Its switch turns automatic
@@ -89,9 +93,9 @@ serializes its own edits, but external editors aren't locked out.
 
 ## How it works
 
-Omapower watches the commands you start, however you start them (`make && zig build`, a script, `sudo zig build`), in its visible PID namespace. That means processes owned by your user, plus processes running as another user (such as root through `sudo`) that carry your login UID, which the kernel keeps across `sudo` and `su`. Other users' processes and system services don't match. It uses kernel process events when available, backed by a recovery scan every five seconds to repair missed events. Reported stream errors or overflows trigger an immediate recovery scan. When events aren't available it scans every 500 ms instead; `omapower --poll` forces that mode. Very short-lived processes may still be missed. You don't need root or extra capabilities.
+Omapower watches the commands you start, however you start them (`make && zig build`, a script, `sudo zig build`), in its visible PID namespace. That means processes owned by your user, plus processes running as another user (such as root through `sudo`) that carry your login UID, which the kernel keeps across `sudo` and `su`. Other users' processes and system services don't match. The power profile itself is system-wide, so while Omapower holds it, the whole machine runs in performance mode. It uses kernel process events when available, backed by a recovery scan every five seconds to repair missed events. Reported stream errors or overflows trigger an immediate recovery scan. When events aren't available it scans every 500 ms instead; `omapower --poll` forces that mode. Very short-lived processes may still be missed. You don't need root or extra capabilities.
 
-A manual profile change that releases Omapower's hold is respected until the matching processes finish. Other applications' holds and system policy can also affect the effective profile. The helper handles power-profiles-daemon restarts and retries failed releases; after an unrecoverable error the plugin service (or systemd, in standalone mode) restarts it within five seconds.
+A manual profile change that releases Omapower's hold is respected until the matching processes finish. If power-profiles-daemon refuses the hold (some machines and virtual machines have no performance profile), Omapower doesn't retry until the matching processes finish, and the widget says so. Other applications' holds and system policy can also affect the effective profile. The helper handles power-profiles-daemon restarts and retries failed releases; after an unrecoverable error the plugin service (or systemd, in standalone mode) restarts it within five seconds.
 
 Holds belong to the helper's system D-Bus connection, so power-profiles-daemon drops them whenever the helper exits, however it exits. Under the shell, the helper runs with `--supervised`: it reports its state as JSON lines on stdout, and exits when its stdin pipe closes, so it never outlives the shell. The plugin service writes the latest state to `$XDG_RUNTIME_DIR/omapower-status.json` for the widgets.
 
@@ -112,12 +116,12 @@ journalctl --user -t omarchy-shell -b -f | grep Omapower   # plugin
 journalctl --user -u omapower -b -f                        # standalone
 ```
 
-A detected command with no hold request points to suppression or an unavailable daemon; a request without an acquisition result points to D-Bus/daemon trouble. `suppressed:true` means an external release is being respected until all matching processes finish; the release signal does not identify whether a person or another application caused it.
+A detected command with no hold request points to suppression or an unavailable daemon; a request without an acquisition result points to D-Bus/daemon trouble. `suppressed:true` means an external release is being respected until all matching processes finish; the release signal does not identify whether a person or another application caused it. `rejected:true` means the daemon refused the hold (the reason is logged as `performance hold rejected:`); Omapower tries again once all matching processes have finished.
 
 For detailed per-PID event and match tracing, stop the running helper (disable the plugin, or stop the standalone service) and run the binary in the foreground:
 
 ```sh
-G_MESSAGES_DEBUG=omapower ./omapower
+G_MESSAGES_DEBUG=omapower ~/.config/omarchy/plugins/raw.omapower/bin/omapower
 ```
 
 Verbose tracing includes process IDs, matching names, event sources, and pidfd availability, but not command-line arguments. It can be noisy during builds; leave it disabled for normal use. Events still cannot guarantee detection of commands that exit before inspection.

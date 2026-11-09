@@ -1,14 +1,17 @@
 #!/bin/sh
-# Run the prebuilt Omapower helper for this machine's architecture.
-# The binaries are built by CI (.github/workflows/binaries.yml); see docs/guide.md.
+# Run the prebuilt Omapower helper for this machine's architecture, or a helper
+# built from source with `make` in the plugin directory when there is none.
+# The prebuilt binaries are built by CI (.github/workflows/binaries.yml); see docs/guide.md.
 here=$(dirname -- "$0")
 case $(uname -m) in
   x86_64) arch=x86_64 ;;
   aarch64 | arm64) arch=aarch64 ;;
-  *) arch= ;;
+  *) arch=none ;;
 esac
-if [ -z "$arch" ] || [ ! -x "$here/omapower-$arch" ]; then
-  echo "omapower: no prebuilt binary for $(uname -m); build from source with make" >&2
-  exit 69
+if [ -x "$here/omapower-$arch" ]; then
+  exec "$here/omapower-$arch" "$@"
+elif [ -x "$here/../omapower" ]; then
+  exec "$here/../omapower" "$@"
 fi
-exec "$here/omapower-$arch" "$@"
+echo "omapower: no prebuilt binary for $(uname -m); run make in $(cd -- "$here/.." && pwd), then restart the shell" >&2
+exit 69

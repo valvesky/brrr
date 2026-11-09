@@ -33,7 +33,7 @@ typedef struct {
     guint reconcile_source, retry_source, stdin_source;
     guint release_failures;
     Operation pending;
-    gboolean holding, suppressed, stopping, release_seen;
+    gboolean holding, suppressed, rejected, stopping, release_seen;
     gboolean enabled, config_error, supervised;
     int exit_status;
 } App;
@@ -57,9 +57,9 @@ static gboolean report_status(App *app) {
     char *mode = json_quote(process_watch_mode(app->processes));
     if (!mode) g_error("cannot encode JSON detection mode");
     gchar *json = g_strdup_printf("{\"enabled\":%s,\"configError\":%s,\"commands\":%s,\"active\":%s,"
-        "\"holding\":%s,\"suppressed\":%s,\"available\":%s,\"monitor\":%s}",
+        "\"holding\":%s,\"suppressed\":%s,\"rejected\":%s,\"available\":%s,\"monitor\":%s}",
         BOOL(app->enabled), BOOL(app->config_error), commands, names, BOOL(app->holding),
-        BOOL(app->suppressed), BOOL(app->owner), mode);
+        BOOL(app->suppressed), BOOL(app->rejected), BOOL(app->owner), mode);
     g_free(names);
     g_free(commands);
     free(mode);
@@ -95,6 +95,14 @@ static gboolean retry_release(gpointer data) {
 
 typedef struct { App *app; guint generation; Operation operation; } PendingCall;
 
+/* Errors the daemon itself returns when it refuses a hold. Anything else
+ * (timeouts, disconnects) leaves it unknown whether the hold was created. */
+static gboolean definite_rejection(const GError *error) {
+    return g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS) ||
+           g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED) ||
+           g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_AUTH_FAILED);
+}
+
 static void call_finished(GObject *connection, GAsyncResult *result, gpointer data) {
     PendingCall *call = data;
     App *app = call->app;
@@ -125,6 +133,12 @@ static void call_finished(GObject *connection, GAsyncResult *result, gpointer da
             g_printerr("omapower: release: %s\n", error->message);
             if (++app->release_failures >= 3) fail(app, "release failed three times; disconnecting to drop the hold");
             else app->retry_source = g_timeout_add_seconds(app->release_failures, retry_release, app);
+        } else if (call->operation == ACQUIRING && definite_rejection(error)) {
+            /* The daemon answered "no" (e.g. no performance profile on this
+             * machine), so no hold exists. Don't retry or restart in a loop:
+             * wait until the matching commands have all exited. */
+            g_printerr("omapower: performance hold rejected: %s\n", error->message);
+            app->rejected = TRUE;
         } else if (call->operation == ACQUIRING) {
             /* A timed-out acquisition may still have succeeded remotely.
              * Never retry it on the same connection and leak another cookie. */
@@ -159,8 +173,8 @@ static void start_call(App *app, Operation operation) {
 
 static void reconcile(App *app) {
     gboolean running = process_watch_running(app->processes);
-    if (!running) app->suppressed = FALSE;
-    gboolean wanted = app->enabled && running && !app->suppressed;
+    if (!running) app->suppressed = app->rejected = FALSE;
+    gboolean wanted = app->enabled && running && !app->suppressed && !app->rejected;
     if (wanted && app->holding && app->retry_source) {
         remove_source(&app->retry_source);
         app->release_failures = 0;
@@ -187,6 +201,7 @@ static void owner_changed(App *app, const char *owner) {
     app->owner = g_strdup(owner);
     app->generation++;
     app->holding = FALSE;
+    app->rejected = FALSE;
     app->cookie = 0;
     app->release_failures = 0;
     remove_source(&app->retry_source);

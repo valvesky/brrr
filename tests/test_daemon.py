@@ -106,7 +106,7 @@ class Profiles(Connection):
         self.holds = {}
         self.hold_calls = self.release_calls = 0
         self.release_errors = 0
-        self.hold_error = self.delay_hold = self.release_before_reply = False
+        self.hold_error = self.hold_reject = self.delay_hold = self.release_before_reply = False
         self.delayed = None
         self.export(PP_PATH, PP_XML, self.method)
         self.subscriptions.append(self.bus.signal_subscribe('org.freedesktop.DBus',
@@ -122,6 +122,11 @@ class Profiles(Connection):
     def method(self, connection, sender, path, interface, method, parameters, invocation):
         if method == 'HoldProfile':
             self.hold_calls += 1
+            if self.hold_reject:
+                # What power-profiles-daemon answers when the profile is unavailable.
+                invocation.return_dbus_error('org.freedesktop.DBus.Error.InvalidArgs',
+                                             "Cannot hold profile 'performance' as it is not available")
+                return
             cookie = self.hold_calls
             self.holds[cookie] = sender
             if self.hold_error:
@@ -256,7 +261,7 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(len(daemon.states), before)
         self.assertEqual(self.profiles.hold_calls, 0)
         self.assertEqual(daemon.state(), dict(enabled=True, configError=False, commands=[], active=[],
-            holding=False, suppressed=False, available=True, monitor=daemon.state()['monitor']))
+            holding=False, suppressed=False, rejected=False, available=True, monitor=daemon.state()['monitor']))
 
     def test_startup_and_overlapping_matches(self):
         first = self.child()
@@ -451,6 +456,27 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(daemon.process.returncode, 1)
         until(lambda: not self.profiles.holds)
         self.assertEqual(self.profiles.hold_calls, 1)
+
+    def test_rejected_hold_waits_for_commands_to_exit(self):
+        self.profiles.hold_reject = True
+        child = self.child()
+        daemon = self.start()
+        until(lambda: daemon.state()['rejected'])
+        pump(0.5)
+        second = self.child()
+        pump(0.5)
+        self.assertIsNone(daemon.process.poll())
+        self.assertEqual(self.profiles.hold_calls, 1)
+        self.assertFalse(daemon.state()['holding'])
+        self.exit_child(child)
+        self.exit_child(second)
+        until(lambda: not daemon.state()['rejected'])
+        self.profiles.hold_reject = False
+        child = self.child()
+        self.held(daemon)
+        self.assertEqual(self.profiles.hold_calls, 2)
+        self.exit_child(child)
+        self.released(daemon)
 
     def test_exit_during_pending_acquisition(self):
         self.profiles.delay_hold = True
