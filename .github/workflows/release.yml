@@ -44,8 +44,8 @@ jobs:
             runner: macos-latest
             setup: rustup target add aarch64-apple-darwin x86_64-apple-darwin
             build: sh scripts/build-release.sh macos
-            package: ditto -c -k --keepParent dist/Omapower.app omapower-macos.zip
-            asset: omapower-macos.zip
+            package: cp dist/omapower-macos.dmg omapower-macos.dmg
+            asset: omapower-macos.dmg
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -62,8 +62,35 @@ jobs:
           path: ${{ matrix.asset }}
           if-no-files-found: error
 
-  publish:
+  windows-installer:
+    # One setup file for x64 and ARM64 PCs, built from both Windows binaries.
+    name: Windows installer
     needs: build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: omapower-windows-*.exe
+          path: dist
+          merge-multiple: true
+      - name: Install Inno Setup
+        run: |
+          if [ ! -x "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then
+            choco install innosetup --yes --no-progress
+          fi
+      - run: sh scripts/build-release.sh windows-installer
+      - uses: actions/upload-artifact@v7
+        with:
+          name: omapower-windows-setup.exe
+          path: dist/omapower-windows-setup.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [build, windows-installer]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
