@@ -1,0 +1,44 @@
+name: Pages
+
+# Publish the static site in docs/ to GitHub Pages.
+# The repository setting Settings → Pages → Source must be "GitHub Actions"
+# before this workflow can deploy. A push does not flip that setting.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - name: Assemble site
+        run: |
+          rm -rf _site
+          mkdir -p _site
+          cp -a docs/. _site/
+          # The in-repo technical guide is Markdown for the repository browser,
+          # not a page of this site.
+          rm -f _site/guide.md
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5
