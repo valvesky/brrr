@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install · brrr</title>
+  <meta name="description" content="Install brrr on Windows, Linux, macOS, or as an Omarchy plugin.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="site-header">
+    <div class="bar">
+      <a class="wordmark" href="index.html">brrr</a>
+      <ul class="nav">
+        <li><a href="install.html" aria-current="page">Install</a></li>
+        <li><a href="apps.html">Apps</a></li>
+        <li><a href="config.html">Config</a></li>
+        <li><a href="behaviour.html">Behaviour</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="uninstall.html">Uninstall</a></li>
+        <li><a href="https://github.com/valvesky/brrr">GitHub</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <main id="content" class="wrap prose wide">
+    <h1 class="page">Install</h1>
+    <p class="deck">Four ways in. Downloads come from the <a href="https://github.com/valvesky/brrr/releases/latest">latest GitHub release</a>.</p>
+    <ul class="toc">
+      <li><a href="#windows">Windows</a></li>
+      <li><a href="#linux">Linux</a></li>
+      <li><a href="#macos">macOS</a></li>
+      <li><a href="#omarchy">Omarchy</a></li>
+      <li><a href="#source">From source</a></li>
+    </ul>
+
+    <h2 id="windows">Windows 10 and 11</h2>
+    <p>Supported from Windows 10 version 1809 onward, and on Windows 11, on x64 and ARM PCs. brrr changes Power mode. That does not need an administrator account, and neither does the installer.</p>
+    <ol class="steps">
+      <li>Download <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-setup.exe"><code>brrr-windows-setup.exe</code></a> and run it. One file covers both architectures and installs the matching program.</li>
+      <li>It installs for your account only, under <code>%LOCALAPPDATA%\Programs\brrr</code>, and adds a Start menu shortcut.</li>
+      <li>Unless you untick it, brrr starts when you sign in. <kbd>Start at login</kbd> in the icon menu, or <code>brrr --install</code>, changes that later.</li>
+      <li>The icon sits in the notification area. Windows may hide it in the overflow; drag it onto the taskbar if you do not see it. The icon follows the taskbar’s light or dark theme and shows the current mode.</li>
+    </ol>
+    <p>Prefer no installer? Download <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-x86_64.exe"><code>brrr-windows-x86_64.exe</code></a> or <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-aarch64.exe"><code>brrr-windows-aarch64.exe</code></a>, put it somewhere it can stay, and run it. Use <kbd>Start at login</kbd> or <code>brrr --install</code> so it comes back at sign-in.</p>
+    <p>On the usual Balanced plan, a watched program switches Power mode to Best performance — the same setting as Settings › System › Power &amp; battery. See <a href="behaviour.html#windows">what happens on other plans</a>.</p>
+
+    <h2 id="linux">Linux</h2>
+    <p>brrr needs <a href="https://gitlab.freedesktop.org/upower/power-profiles-daemon">power-profiles-daemon</a>, or tuned-ppd, which provides the same interface. Most desktop distributions already include one of them. <code>powerprofilesctl</code> tells you whether it is running. You do not need root or extra capabilities.</p>
+    <p>The release binary is statically linked, so the same file runs on any distribution.</p>
+    <ol class="steps">
+      <li>Download <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-linux-x86_64.tar.gz"><code>brrr-linux-x86_64.tar.gz</code></a> or <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-linux-aarch64.tar.gz"><code>brrr-linux-aarch64.tar.gz</code></a>.</li>
+      <li>Unpack it and put the <code>brrr</code> binary on your <code>PATH</code>.</li>
+      <li>Start the tray now, and at every login:</li>
+    </ol>
+    <pre><code>brrr --install   # tray icon at every login, and its app icon
+brrr --tray &amp;    # and right now</code></pre>
+    <p>The tray icon is a StatusNotifierItem. KDE Plasma, waybar, Xfce, the Omarchy shell, and GNOME with the AppIndicator extension all show it, drawn and themed by the desktop. The menu has the switch, the watched commands, and <kbd>Add Command…</kbd>. That asks with <code>zenity</code>, <code>kdialog</code>, or <code>qarma</code> when one is installed, and otherwise opens the configuration file. <code>brrr --uninstall</code> removes the login item.</p>
+
+    <h3>Without a tray</h3>
+    <p>Run it as a systemd user service. With no arguments, brrr stays headless, which is what a service wants. Create <code>~/.config/systemd/user/brrr.service</code>:</p>
+    <pre><code>[Unit]
+Description=brrr process-based power profile holds
+After=graphical-session.target
+
+[Service]
+ExecStart=/absolute/path/to/brrr
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target</code></pre>
+    <pre><code>systemctl --user daemon-reload
+systemctl --user enable --now brrr</code></pre>
+    <p>To stop, see <a href="uninstall.html#linux">uninstall</a>.</p>
+
+    <h2 id="macos">macOS 12 or later</h2>
+    <p>Download <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-macos.dmg"><code>brrr-macos.dmg</code></a>, open it, and drag <em>brrr</em> to Applications. Open it from there. The app is universal: one download for Apple silicon and Intel. It runs as a menu bar icon and does not show a Dock icon.</p>
+    <div class="callout">
+      <p>The app is not notarized. The first time, macOS asks you to confirm it: right-click brrr, choose Open, then Open again. You can also allow it under System Settings › Privacy &amp; Security.</p>
+    </div>
+    <p>macOS has no power setting an ordinary app can change. Low Power Mode and High Power Mode are switched with <code>pmset</code>, which needs root. Choose <kbd>Allow Power Mode Switching…</kbd> from the menu bar icon and enter your password once. brrr installs a sudoers rule, <code>/etc/sudoers.d/brrr</code>, that allows only these commands, for your user only:</p>
+    <pre><code>/usr/bin/pmset -b lowpowermode [01], /usr/bin/pmset -c lowpowermode [01],
+/usr/bin/pmset -b powermode [012],   /usr/bin/pmset -c powermode [012]</code></pre>
+    <p><kbd>Start at Login</kbd>, or <code>brrr --install</code> (which also installs the rule), adds a LaunchAgent at <code>~/Library/LaunchAgents/com.brrr.agent.plist</code>. <code>brrr --uninstall</code> removes the agent and the sudoers rule, and asks for your password again.</p>
+    <p>Boosting turns off Low Power Mode for the power source you are on (battery or charger) and, on MacBook Pros that have High Power Mode, turns that on. If neither applies, the Mac is already at full power and brrr has nothing to change.</p>
+
+    <h2 id="omarchy">Omarchy</h2>
+    <pre><code>omarchy plugin add https://github.com/valvesky/brrr.git --enable</code></pre>
+    <p>That is the whole install. The plugin ships prebuilt static binaries for x86_64 and aarch64, so there is nothing to build and no package to install. The widget’s icons come from the bar’s Nerd Font.</p>
+    <p>On any other architecture, run <code>make</code> in <code>~/.config/omarchy/plugins/raw.brrr</code> (it needs <a href="https://rustup.rs">Rust</a>), then restart the Omarchy shell. The plugin uses that build when no prebuilt binary fits.</p>
+    <p>The plugin’s background service runs one brrr for as long as the shell runs, however many bars show the widget. The widget shows whether automatic boost is on, the status, and the watched commands. Its switch is saved in your configuration and kept across restarts. Plugin updates replace and restart brrr.</p>
+    <p>Under the shell, brrr runs with <code>--supervised</code>: it prints its state as JSON lines on stdout and exits when that stdin pipe closes, so it never outlives the shell. The service writes the latest state to <code>$XDG_RUNTIME_DIR/brrr-status.json</code> for the widgets. Another bar can read the same lines.</p>
+    <p>Remove it with <code>omarchy plugin remove raw.brrr</code>. brrr stops with the plugin. Your <a href="config.html">configuration file</a> is separate and stays.</p>
+    <div class="callout">
+      <p>If you installed an early Omapower with <code>setup.sh</code>, the plugin retires that old systemd user service once, on first start. It only removes <code>~/.config/systemd/user/omapower.service</code> when that unit’s <code>ExecStart</code> is the binary under <code>~/.local/share/omapower</code>, and it deletes that directory. A unit you wrote yourself is left alone. The command list is kept.</p>
+    </div>
+
+    <h2 id="source">From source</h2>
+    <p>brrr is one Rust package and needs Rust 1.89 or newer. Building on a system produces that system’s binary:</p>
+    <pre><code>cargo build --release      # target/release/brrr</code></pre>
+    <p><code>make test</code> runs the Rust unit tests, the command-line and JSON compatibility tests, the widget’s JavaScript tests, and, on Linux, the isolated D-Bus integration tests (including a headless Quickshell run of the plugin). Those need <code>jq</code>, Node.js, <code>dbus-run-session</code>, a C compiler, Quickshell, and Python with PyGObject. On Windows and macOS, <code>cargo test</code> runs the unit tests.</p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>brrr is <a href="https://github.com/valvesky/brrr/blob/master/LICENSE">MIT licensed</a>. It was formerly called Omapower. The picture is by <a href="https://twitter.com/monky_sm/status/1744264103558779075">@monky_sm</a> and is not part of that license. The bolt icon is Font Awesome’s, <a href="https://fontawesome.com/license/free">CC BY 4.0</a>.</p>
+      <ul class="footer-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="apps.html">Apps</a></li>
+        <li><a href="uninstall.html">Uninstall</a></li>
+        <li><a href="https://github.com/valvesky/brrr">GitHub</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

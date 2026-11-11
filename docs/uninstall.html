@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uninstall · brrr</title>
+  <meta name="description" content="Remove brrr on Windows, Linux, macOS, and Omarchy. The command list in the config directory is kept.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="site-header">
+    <div class="bar">
+      <a class="wordmark" href="index.html">brrr</a>
+      <ul class="nav">
+        <li><a href="install.html">Install</a></li>
+        <li><a href="apps.html">Apps</a></li>
+        <li><a href="config.html">Config</a></li>
+        <li><a href="behaviour.html">Behaviour</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="uninstall.html" aria-current="page">Uninstall</a></li>
+        <li><a href="https://github.com/valvesky/brrr">GitHub</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <main id="content" class="wrap prose">
+    <h1 class="page">Uninstall</h1>
+    <p class="deck">Removing the program does not remove your command list. The <a href="config.html">config directory</a> stays, so a later install picks up the same names.</p>
+
+    <h2 id="windows">Windows</h2>
+    <p>Uninstall <em>brrr</em> from Settings › Apps. The uninstaller asks the running copy to quit first, so it can put the power mode back, and it removes the sign-in entry. Your command list stays in <code>%APPDATA%\brrr</code> (or under <code>XDG_CONFIG_HOME</code> if that variable is set).</p>
+    <p>If you used the portable <code>.exe</code> instead of the installer: turn off <kbd>Start at login</kbd>, choose <kbd>Quit</kbd>, and delete the file.</p>
+
+    <h2 id="linux">Linux</h2>
+    <p>The tray login item:</p>
+    <pre><code>brrr --uninstall</code></pre>
+    <p>That removes the autostart entry and the icon it installed. Then delete the <code>brrr</code> binary you placed on <code>PATH</code>.</p>
+    <p>A systemd user service:</p>
+    <pre><code>systemctl --user disable --now brrr
+rm ~/.config/systemd/user/brrr.service
+systemctl --user daemon-reload</code></pre>
+    <p>Quit a running tray with <kbd>Quit</kbd> in its menu so a hold is released cleanly. On Linux the daemon also drops the hold if the process simply exits.</p>
+
+    <h2 id="macos">macOS</h2>
+    <p><code>brrr --uninstall</code> removes both the LaunchAgent (<code>~/Library/LaunchAgents/com.brrr.agent.plist</code>) and the sudoers rule (<code>/etc/sudoers.d/brrr</code>). Removing the rule asks for your password again. Then delete brrr from Applications.</p>
+    <p>Dragging the app to the Trash on its own leaves the login item and the sudoers rule behind. Run <code>--uninstall</code> first. <kbd>Start at Login</kbd> in the menu only toggles the LaunchAgent; it does not remove the sudoers rule.</p>
+
+    <h2 id="omarchy">Omarchy</h2>
+    <pre><code>omarchy plugin remove raw.brrr</code></pre>
+    <p>brrr stops with the plugin. The configuration file is outside the plugin directory and is kept.</p>
+
+    <h2>What is left on disk</h2>
+    <ul>
+      <li><code>config.json</code>, in the <a href="config.html">per-system config directory</a>.</li>
+      <li>On Windows or macOS, a restore file in that same directory if a boost was still in progress. The next start of brrr consumes it. If you are not reinstalling, you can delete <code>windows-power-restore.json</code> or <code>macos-power-restore.json</code> after you have checked the power mode yourself. Deleting it does not change the mode; it only forgets the undo record.</li>
+    </ul>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>brrr is <a href="https://github.com/valvesky/brrr/blob/master/LICENSE">MIT licensed</a>. It was formerly called Omapower. The picture is by <a href="https://twitter.com/monky_sm/status/1744264103558779075">@monky_sm</a> and is not part of that license. The bolt icon is Font Awesome’s, <a href="https://fontawesome.com/license/free">CC BY 4.0</a>.</p>
+      <ul class="footer-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="install.html">Install</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+        <li><a href="https://github.com/valvesky/brrr">GitHub</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>
