@@ -5,13 +5,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-const LABEL: &str = "com.omapower.agent";
+const LABEL: &str = "com.brrr.agent";
+const LEGACY_LABEL: &str = "com.omapower.agent";
 
 pub fn report(result: Result<(), String>) -> i32 {
     match result {
         Ok(()) => 0,
         Err(error) => {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             1
         }
     }
@@ -119,7 +120,7 @@ fn authorization_script(user: &str) -> Result<String, String> {
     // The temporary file lives in the root-owned destination directory, and
     // its dotted name is ignored by sudo until validation and atomic rename.
     Ok(format!(
-        "set -eu; /bin/mkdir -p /etc/sudoers.d; temporary=$(/usr/bin/mktemp /etc/sudoers.d/.omapower.XXXXXX); trap '/bin/rm -f \"$temporary\"' EXIT; /usr/bin/printf '%s\\n' {rule} > \"$temporary\"; /usr/sbin/chown root:wheel \"$temporary\"; /bin/chmod 0440 \"$temporary\"; /usr/sbin/visudo -cf \"$temporary\"; /bin/mv -f \"$temporary\" /etc/sudoers.d/omapower; trap - EXIT"
+        "set -eu; /bin/mkdir -p /etc/sudoers.d; temporary=$(/usr/bin/mktemp /etc/sudoers.d/.brrr.XXXXXX); trap '/bin/rm -f \"$temporary\"' EXIT; /usr/bin/printf '%s\\n' {rule} > \"$temporary\"; /usr/sbin/chown root:wheel \"$temporary\"; /bin/chmod 0440 \"$temporary\"; /usr/sbin/visudo -cf \"$temporary\"; /bin/mv -f \"$temporary\" /etc/sudoers.d/brrr; trap - EXIT"
     ))
 }
 
@@ -133,19 +134,55 @@ fn administrator(script: &str) -> Result<(), String> {
 
 pub fn allow_power_switching() -> Result<(), String> {
     administrator(&authorization_script(&username()?)?)?;
-    eprintln!("omapower: installed /etc/sudoers.d/omapower (root:wheel, 0440)");
+    eprintln!("brrr: installed /etc/sudoers.d/brrr (root:wheel, 0440)");
     Ok(())
 }
 
-fn agent_path() -> Result<PathBuf, String> {
+fn agent_file(label: &str) -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .ok_or("HOME is not set")?;
-    Ok(PathBuf::from(home).join("Library/LaunchAgents/com.omapower.agent.plist"))
+    Ok(PathBuf::from(home).join(format!("Library/LaunchAgents/{label}.plist")))
+}
+
+fn agent_path() -> Result<PathBuf, String> {
+    agent_file(LABEL)
 }
 
 pub fn login_enabled() -> bool {
-    agent_path().is_ok_and(|path| path.exists())
+    agent_file(LABEL).is_ok_and(|path| path.exists())
+        || agent_file(LEGACY_LABEL).is_ok_and(|path| path.exists())
+}
+
+fn stop_agent(label: &str) -> Result<(), String> {
+    let path = agent_file(label)?;
+    match fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("remove {}: {error}", path.display())),
+    }
+    let service = format!("{}/{label}", domain());
+    let loaded = Command::new("/bin/launchctl")
+        .args(["print", &service])
+        .output()
+        .map_err(|error| format!("launchctl print: {error}"))?
+        .status
+        .success();
+    if loaded {
+        output(Command::new("/bin/launchctl").args(["bootout", &service])).map(|_| ())
+    } else {
+        Ok(())
+    }
+}
+
+/// If Start at Login still points at the pre-rename agent, install this
+/// binary's agent and remove the old one. The pmset sudoers rule is unchanged.
+pub fn migrate_login() {
+    if agent_file(LEGACY_LABEL).is_ok_and(|path| path.exists()) {
+        if let Err(error) = set_login(true) {
+            eprintln!("brrr: could not move Start at Login to the new name: {error}");
+        }
+    }
 }
 
 fn xml(text: &str) -> Result<String, String> {
@@ -207,30 +244,17 @@ pub fn set_login(enabled: bool) -> Result<(), String> {
                 return Err(format!("launchctl bootstrap: {message}"));
             }
         }
-        eprintln!("omapower: enabled Start at Login ({})", path.display());
-        Ok(())
+        eprintln!("brrr: enabled Start at Login ({})", path.display());
+        // The new agent is in place; drop the pre-rename one so login starts one app.
+        stop_agent(LEGACY_LABEL)
     } else {
         // Removing the plist comes first: bootout may send SIGTERM to this
         // very process when the toggle is used from the launch agent's menu.
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("remove {}: {error}", path.display())),
+        let removed = stop_agent(LABEL);
+        if removed.is_ok() {
+            eprintln!("brrr: disabled Start at Login ({})", path.display());
         }
-        eprintln!("omapower: disabled Start at Login ({})", path.display());
-        // Check whether there is a job first: an absent job is already stopped.
-        let service = format!("{}/{LABEL}", domain());
-        let loaded = Command::new("/bin/launchctl")
-            .args(["print", &service])
-            .output()
-            .map_err(|error| format!("launchctl print: {error}"))?
-            .status
-            .success();
-        if loaded {
-            output(Command::new("/bin/launchctl").args(["bootout", &service])).map(|_| ())
-        } else {
-            Ok(())
-        }
+        removed.and(stop_agent(LEGACY_LABEL))
     }
 }
 
@@ -243,12 +267,13 @@ pub fn uninstall() -> Result<(), String> {
     // Complete both independent removals even if either fails.
     let agent = set_login(false);
     if let Err(error) = &agent {
-        eprintln!("omapower: {error}");
+        eprintln!("brrr: {error}");
     }
-    let rule = administrator("/bin/rm -f /etc/sudoers.d/omapower");
+    // The pmset commands are unchanged. Remove this name and the pre-rename file.
+    let rule = administrator("/bin/rm -f /etc/sudoers.d/brrr /etc/sudoers.d/omapower");
     match &rule {
-        Ok(()) => eprintln!("omapower: removed /etc/sudoers.d/omapower"),
-        Err(error) => eprintln!("omapower: remove sudoers rule: {error}"),
+        Ok(()) => eprintln!("brrr: removed /etc/sudoers.d/brrr and /etc/sudoers.d/omapower"),
+        Err(error) => eprintln!("brrr: remove sudoers rule: {error}"),
     }
     agent.and(rule)
 }
@@ -271,6 +296,9 @@ mod tests {
         assert!(script.find("visudo -cf").unwrap() < script.find("/bin/mv -f").unwrap());
         assert!(script.contains("chmod 0440"));
         assert!(script.contains("root:wheel"));
+        assert!(script.contains("/etc/sudoers.d/brrr"));
+        assert!(script.contains("/usr/bin/pmset -b powermode [012]"));
+        assert!(script.contains("/usr/bin/pmset -c lowpowermode [01]"));
     }
 
     #[test]
@@ -281,8 +309,8 @@ mod tests {
 
     #[test]
     fn agent_escapes_executable_and_has_restart_policy() {
-        let text = plist("/Users/A & B/<build>/omapower\"").unwrap();
-        assert!(text.contains("/Users/A &amp; B/&lt;build&gt;/omapower&quot;"));
+        let text = plist("/Users/A & B/<build>/brrr\"").unwrap();
+        assert!(text.contains("/Users/A &amp; B/&lt;build&gt;/brrr&quot;"));
         assert!(text.contains("<key>SuccessfulExit</key><false/>"));
         assert!(text.contains("<key>ProcessType</key><string>Interactive</string>"));
         assert!(plist("bad\0path").is_err());

@@ -19,7 +19,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-const CLASS: &str = "Omapower.AddCommand";
+const CLASS: &str = "brrr.AddCommand";
 const WIDTH: i32 = 380;
 const HEIGHT: i32 = 132;
 
@@ -226,7 +226,7 @@ pub fn prompt(owner: HWND) -> Result<Option<String>, String> {
         CreateWindowExW(
             extended,
             wide(CLASS).as_ptr(),
-            wide("Add Command").as_ptr(),
+            wide("Add app").as_ptr(),
             style,
             work.left + (work.right - work.left - width) / 2,
             work.top + (work.bottom - work.top - height) / 2,

@@ -15,7 +15,7 @@ impl Processes {
     pub fn new(events: Events) -> Result<Self, String> {
         let (sender, receiver) = mpsc::channel();
         let thread = std::thread::Builder::new()
-            .name("omapower-processes".into())
+            .name("brrr-processes".into())
             .spawn(move || {
                 // SAFETY: getuid has no preconditions and does not borrow memory.
                 let uid = unsafe { libc::getuid() };

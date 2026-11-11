@@ -42,7 +42,7 @@ pub fn uninstall() -> i32 {
 
 pub fn already_running(ui: bool) {
     if ui {
-        self::ui::information("Omapower is already running");
+        self::ui::information("brrr is already running");
     }
 }
 
@@ -110,7 +110,7 @@ pub(super) fn run_engine(tx: Events, rx: Receiver<Event>, frontend: Frontend) ->
     let status = match result {
         Ok(status) => status,
         Err(error) => {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             1
         }
     };
@@ -119,6 +119,7 @@ pub(super) fn run_engine(tx: Events, rx: Receiver<Event>, frontend: Frontend) ->
 }
 
 pub fn run(supervised: bool, _poll: bool, ui: bool) -> i32 {
+    login::migrate();
     let (tx, rx) = mpsc::channel();
     if let Ok(mut state) = CONSOLE.0.lock() {
         state.events = Some(tx.clone());

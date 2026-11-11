@@ -21,11 +21,11 @@ pub fn already_running(_ui: bool) {}
 pub fn install() -> i32 {
     match tray::set_autostart(true) {
         Ok(()) => {
-            eprintln!("omapower: the tray icon starts at login ({})", tray::autostart_path().display());
+            eprintln!("brrr: the tray icon starts at login ({})", tray::autostart_path().display());
             0
         }
         Err(error) => {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             1
         }
     }
@@ -34,17 +34,18 @@ pub fn install() -> i32 {
 pub fn uninstall() -> i32 {
     match tray::set_autostart(false) {
         Ok(()) => {
-            eprintln!("omapower: removed the login item");
+            eprintln!("brrr: removed the login item");
             0
         }
         Err(error) => {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             1
         }
     }
 }
 
 pub fn run(supervised: bool, poll: bool, ui: bool) -> i32 {
+    tray::migrate_autostart();
     let (events, receiver) = mpsc::channel();
     match signal_hook::iterator::Signals::new([signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT]) {
         Ok(mut signals) => {
@@ -56,7 +57,7 @@ pub fn run(supervised: bool, poll: bool, ui: bool) -> i32 {
             });
         }
         Err(error) => {
-            eprintln!("omapower: signals: {error}");
+            eprintln!("brrr: signals: {error}");
             return 1;
         }
     }
@@ -73,7 +74,7 @@ pub fn run(supervised: bool, poll: bool, ui: bool) -> i32 {
     let (mut watch, processes, power) = match started {
         Ok(parts) => parts,
         Err(error) => {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             return 1;
         }
     };
@@ -88,7 +89,7 @@ pub fn run(supervised: bool, poll: bool, ui: bool) -> i32 {
                 true
             }),
             Err(error) => {
-                eprintln!("omapower: tray: {error}");
+                eprintln!("brrr: tray: {error}");
                 return 1;
             }
         }

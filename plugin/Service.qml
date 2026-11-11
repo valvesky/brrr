@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Runs one Omapower helper for as long as the shell runs, whatever the number
+// Runs one brrr helper for as long as the shell runs, whatever the number
 // of bars, and publishes its state to a runtime file for the bar widgets.
 // Replacement bars do not hand widgets live service objects, so the file is
 // the one interface every bar can read.
@@ -16,7 +16,7 @@ Scope {
     property var manifest: null
 
     readonly property string binDir: decodeURIComponent(String(Qt.resolvedUrl("../bin")).replace(/^file:\/\//, ""))
-    readonly property string statusPath: Quickshell.env("XDG_RUNTIME_DIR") + "/omapower-status.json"
+    readonly property string statusPath: Quickshell.env("XDG_RUNTIME_DIR") + "/brrr-status.json"
     readonly property int exitUnsupported: 69
     readonly property int exitBusy: 75
     property bool stopping: false
@@ -58,14 +58,14 @@ Scope {
     Process {
         id: retire
         command: [root.binDir + "/retire-legacy-service"]
-        stderr: SplitParser { onRead: function(data) { console.warn("Omapower: " + data) } }
+        stderr: SplitParser { onRead: function(data) { console.warn("brrr: " + data) } }
         onExited: function(code) { root.retireExit = code }
         onRunningChanged: if (!running) Qt.callLater(root.retireFinished)
     }
 
     Process {
         id: helper
-        command: [root.binDir + "/omapower", "--supervised"]
+        command: [root.binDir + "/brrr", "--supervised"]
         stdinEnabled: true
         stdout: SplitParser {
             onRead: function(data) {
@@ -76,11 +76,11 @@ Scope {
                     state.running = true
                     root.publish(state)
                 } catch (e) {
-                    console.warn("Omapower: ignoring invalid helper output")
+                    console.warn("brrr: ignoring invalid helper output")
                 }
             }
         }
-        stderr: SplitParser { onRead: function(data) { console.log("Omapower: " + data) } }
+        stderr: SplitParser { onRead: function(data) { console.log("brrr: " + data) } }
         onExited: function(code) { root.helperExit = code }
         onRunningChanged: if (!running) Qt.callLater(root.helperFinished)
     }

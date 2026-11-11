@@ -7,14 +7,14 @@ import subprocess
 import tempfile
 import unittest
 
-BINARY = Path(__file__).resolve().parent.parent / 'omapower'
+BINARY = Path(__file__).resolve().parent.parent / 'brrr'
 
 
 class JsonConfig(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='omapower-json-')
+        self.temp = tempfile.TemporaryDirectory(prefix='brrr-json-')
         self.addCleanup(self.temp.cleanup)
-        self.config = Path(self.temp.name) / 'omapower/config.json'
+        self.config = Path(self.temp.name) / 'brrr/config.json'
         self.config.parent.mkdir()
         self.env = dict(os.environ, XDG_CONFIG_HOME=self.temp.name)
 
