@@ -275,7 +275,7 @@ impl Watcher {
     }
 
     fn fallback(&mut self, reason: &str) {
-        eprintln!("omapower: process events unavailable ({reason}); polling /proc every {} ms", FALLBACK.as_millis());
+        eprintln!("brrr: process events unavailable ({reason}); polling /proc every {} ms", FALLBACK.as_millis());
         self.close_socket();
         self.mode = "polling";
         self.next_scan = Instant::now() + FALLBACK;
@@ -411,7 +411,7 @@ impl Watcher {
         self.scan(if events { "recovery" } else { "poll" });
         if events && self.changes != before {
             eprintln!(
-                "omapower: recovery scan corrected {} process match changes; events received={}",
+                "brrr: recovery scan corrected {} process match changes; events received={}",
                 self.changes - before,
                 self.events_seen
             );
@@ -439,7 +439,7 @@ impl Watcher {
                     self.acknowledged = true;
                     self.ack_deadline = None;
                     self.mode = "events";
-                    eprintln!("omapower: process events subscribed; recovery scan every {} ms", RECONCILE.as_millis());
+                    eprintln!("brrr: process events subscribed; recovery scan every {} ms", RECONCILE.as_millis());
                 }
             }
             PROC_EVENT_FORK if pid(DATA + 8) == pid(DATA + 12) => self.refresh_pid(pid(DATA + 12), "event:fork"),
@@ -573,7 +573,7 @@ impl Watcher {
             let now = Instant::now();
             if self.last_recovery_log.is_none_or(|last| now - last >= Duration::from_secs(5)) {
                 eprintln!(
-                    "omapower: process stream loss/error; immediate recovery scan (total={})",
+                    "brrr: process stream loss/error; immediate recovery scan (total={})",
                     self.stream_recoveries
                 );
                 self.last_recovery_log = Some(now);
@@ -680,15 +680,15 @@ fn rand_u32() -> u32 {
     }
 }
 
-/// Per-PID tracing, enabled like GLib's: G_MESSAGES_DEBUG=omapower (or all).
+/// Per-PID tracing, enabled like GLib's: G_MESSAGES_DEBUG=brrr (or all).
 fn debug(message: std::fmt::Arguments) {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let enabled = *ENABLED.get_or_init(|| {
         std::env::var("G_MESSAGES_DEBUG")
-            .is_ok_and(|value| value.split([' ', ',']).any(|domain| domain == "omapower" || domain == "all"))
+            .is_ok_and(|value| value.split([' ', ',']).any(|domain| domain == "brrr" || domain == "all"))
     });
     if enabled {
-        eprintln!("omapower-debug: {message}");
+        eprintln!("brrr-debug: {message}");
     }
 }
 

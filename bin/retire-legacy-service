@@ -1,8 +1,9 @@
 #!/bin/sh
-# Retire the systemd user service written by Omapower's former setup.sh, once.
-# The shell plugin now supervises Omapower. Only a unit that runs the binary
-# setup.sh installed is touched; hand-written standalone units and the command
-# list in $XDG_CONFIG_HOME/omapower are left alone.
+# Retire the systemd user service written by omapower's former setup.sh, once.
+# These paths are the historical install and must stay "omapower": brrr's plugin
+# supervises the helper itself. Only a unit that runs the binary setup.sh
+# installed is touched; hand-written units and the old command list are left
+# alone (brrr copies that list on its own first run).
 set -u
 data=${XDG_DATA_HOME:-$HOME/.local/share}/omapower
 unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/omapower.service
@@ -18,4 +19,4 @@ systemctl --user disable --now omapower.service || exit 1
 rm -f -- "$unit" "$data/omapower" "$data/setup-complete" "$data/setup.lock"
 rmdir -- "$data" 2>/dev/null
 systemctl --user daemon-reload || true
-echo "retired the systemd service from the previous Omapower setup" >&2
+echo "retired the systemd service from the previous omapower setup" >&2

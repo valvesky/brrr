@@ -45,14 +45,14 @@ jobs:
       - name: Integration tests
         run: |
           cc -O2 -Wall -Wextra -pthread -o tests/thread-group tests/thread-group.c
-          cp bin/omapower-${{ matrix.arch }} omapower
+          cp bin/brrr-${{ matrix.arch }} brrr
           sh tests/test_edit.sh
           python3 tests/test_json.py
-          dbus-run-session -- python3 tests/test_daemon.py ./omapower
+          dbus-run-session -- python3 tests/test_daemon.py ./brrr
       - uses: actions/upload-artifact@v7
         with:
-          name: omapower-${{ matrix.arch }}
-          path: bin/omapower-${{ matrix.arch }}
+          name: brrr-${{ matrix.arch }}
+          path: bin/brrr-${{ matrix.arch }}
           if-no-files-found: error
 
   check:
@@ -94,8 +94,8 @@ jobs:
       - name: Commit updated binaries
         if: steps.sources.outputs.current == 'true'
         run: |
-          chmod 755 bin/omapower-*
-          git add bin/omapower-x86_64 bin/omapower-aarch64
+          chmod 755 bin/brrr-*
+          git add bin/brrr-x86_64 bin/brrr-aarch64
           if git diff --cached --quiet; then
             echo "Binaries are up to date."
             exit 0

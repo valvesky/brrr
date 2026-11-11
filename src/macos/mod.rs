@@ -47,7 +47,7 @@ impl Signals {
         .map_err(|error| format!("watch signals: {error}"))?;
         let handle = signals.handle();
         let thread = std::thread::Builder::new()
-            .name("omapower-signals".into())
+            .name("brrr-signals".into())
             .spawn(move || {
                 for _ in signals.forever() {
                     if events.send(Event::Stop).is_err() {
@@ -73,6 +73,7 @@ impl Drop for Signals {
 }
 
 pub fn run(supervised: bool, _poll: bool, ui: bool) -> i32 {
+    setup::migrate_login();
     let (tx, rx) = mpsc::channel();
     let _signals = match Signals::new(tx.clone()) {
         Ok(signals) => signals,
@@ -124,7 +125,7 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
     let directory = path.parent().ok_or("file has no parent directory")?;
     fs::create_dir_all(directory).map_err(|error| error.to_string())?;
     let temporary = directory.join(format!(
-        ".omapower-{}-{}.tmp",
+        ".brrr-{}-{}.tmp",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed),
     ));

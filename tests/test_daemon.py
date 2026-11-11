@@ -14,7 +14,7 @@ import warnings
 
 from gi.repository import Gio, GLib
 
-BINARY = str(Path(sys.argv.pop(1) if len(sys.argv) > 1 else './omapower').resolve())
+BINARY = str(Path(sys.argv.pop(1) if len(sys.argv) > 1 else './brrr').resolve())
 ADDRESS = os.environ['DBUS_SESSION_BUS_ADDRESS']
 PP_NAME = 'net.hadess.PowerProfiles'
 PP_PATH = '/net/hadess/PowerProfiles'
@@ -22,7 +22,8 @@ COMM = 'oma_evt_test'
 DEFAULT_COMMANDS = sorted([
     'rustc', 'cargo', 'gcc', 'g++', 'cc', 'c++', 'cc1', 'cc1plus',
     'clang', 'clang++', 'zig', 'go', 'javac', 'swiftc', 'swift-frontend',
-    'gfortran', 'flang', 'nvcc', 'ghc',
+    'gfortran', 'flang', 'nvcc', 'ghc', '7z', 'blender', 'ffmpeg', 'obs',
+    '7zz', 'HandBrakeCLI', 'ghb', 'resolve',
 ])
 PP_XML = '''<node><interface name="net.hadess.PowerProfiles">
 <method name="HoldProfile"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="u" direction="out"/></method>
@@ -157,9 +158,9 @@ class Profiles(Connection):
 class Daemon:
     """Runs the helper as the shell plugin does: supervised, state on stdout."""
     def __init__(self, commands, poll=False, address=ADDRESS, base=None, wait=True):
-        self.temp = None if base else tempfile.TemporaryDirectory(prefix='omapower-test-')
+        self.temp = None if base else tempfile.TemporaryDirectory(prefix='brrr-test-')
         self.base = Path(base or self.temp.name)
-        self.config = self.base / 'config' / 'omapower' / 'config.json'
+        self.config = self.base / 'config' / 'brrr' / 'config.json'
         self.config.parent.mkdir(parents=True, exist_ok=True)
         self.runtime = self.base / 'runtime'
         self.runtime.mkdir(mode=0o700, exist_ok=True)
@@ -548,9 +549,9 @@ class Lifecycle(unittest.TestCase):
 
     def prepared(self, text):
         """Start a daemon whose configuration file already holds text."""
-        temp = tempfile.TemporaryDirectory(prefix='omapower-test-')
+        temp = tempfile.TemporaryDirectory(prefix='brrr-test-')
         self.addCleanup(temp.cleanup)
-        config = Path(temp.name) / 'config' / 'omapower' / 'config.json'
+        config = Path(temp.name) / 'config' / 'brrr' / 'config.json'
         config.parent.mkdir(parents=True)
         config.write_text(text)
         daemon = Daemon(None, base=temp.name)
@@ -633,9 +634,9 @@ class PluginSmoke(unittest.TestCase):
     def setUp(self):
         self.profiles = Profiles()
         self.children = []
-        self.temp = tempfile.TemporaryDirectory(prefix='omapower-qml-test-')
+        self.temp = tempfile.TemporaryDirectory(prefix='brrr-qml-test-')
         base = Path(self.temp.name)
-        self.config = base / 'config' / 'omapower' / 'config.json'
+        self.config = base / 'config' / 'brrr' / 'config.json'
         self.runtime = base / 'runtime'
         self.runtime.mkdir(mode=0o700)
         shell = base / 'shell'
@@ -645,7 +646,7 @@ class PluginSmoke(unittest.TestCase):
         for name in ('Service.qml', 'BarWidget.qml', 'Whitelist.js', 'i18n/en.json'):
             shutil.copyfile(project / 'plugin' / name, shell / 'plugin' / name)
         shutil.copy(project / 'bin' / 'retire-legacy-service', shell / 'bin')
-        launcher = shell / 'bin' / 'omapower'
+        launcher = shell / 'bin' / 'brrr'
         launcher.write_text('#!/bin/sh\nexec %s "$@"\n' % json.dumps(BINARY))
         launcher.chmod(0o755)
         stubs = {
@@ -691,9 +692,9 @@ ShellRoot {
         error: widget.whitelistError, holding: widget.holding, canEdit: widget.canEdit,
         actionError: widget.actionError, editError: widget.whitelistActionError
     })
-    onSnapshotChanged: console.log("OMAPOWER_WIDGET " + snapshot)
+    onSnapshotChanged: console.log("BRRR_WIDGET " + snapshot)
     FileView {
-        path: Quickshell.env("OMAPOWER_CONTROL")
+        path: Quickshell.env("BRRR_CONTROL")
         watchChanges: true
         onFileChanged: reload()
         onLoaded: {
@@ -723,7 +724,7 @@ ShellRoot {
         env = dict(os.environ, QT_QPA_PLATFORM='offscreen', DBUS_SYSTEM_BUS_ADDRESS=ADDRESS, HOME=str(base),
             XDG_CONFIG_HOME=str(base / 'config'), XDG_DATA_HOME=str(base / 'data'),
             XDG_RUNTIME_DIR=str(self.runtime), XDG_STATE_HOME=str(base / 'state'),
-            OMAPOWER_CONTROL=str(self.control), GIO_USE_VFS='local', PATH=str(tools) + ':' + os.environ['PATH'])
+            BRRR_CONTROL=str(self.control), GIO_USE_VFS='local', PATH=str(tools) + ':' + os.environ['PATH'])
         env.pop('WAYLAND_DISPLAY', None)
         self.env = env
         self.buffer = b''
@@ -772,7 +773,7 @@ ShellRoot {
             pass
         while b'\n' in self.buffer:
             line, self.buffer = self.buffer.split(b'\n', 1)
-            marker = b'OMAPOWER_WIDGET '
+            marker = b'BRRR_WIDGET '
             if marker in line:
                 self.snapshot = json.loads(line.split(marker, 1)[1])
         return self.snapshot
@@ -817,6 +818,7 @@ ShellRoot {
         self.assertNotIn('TypeError', self.output)
 
     def test_never_runs_beside_the_legacy_service_legacy(self):
+        # The retire script still looks for the historical omapower unit.
         data = self.base / 'data' / 'omapower'
         unit = self.base / 'config' / 'systemd' / 'user' / 'omapower.service'
         data.mkdir(parents=True)

@@ -1,4 +1,4 @@
-//! Omapower: full power while you compile.
+//! brrr: full power while something heavy is running.
 //!
 //! The shared logic lives in `core`. Each operating system has its own
 //! module with a native process watcher, power backend and status icon, and
@@ -23,7 +23,7 @@ mod macos;
 use macos as platform;
 
 #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
-compile_error!("Omapower supports Linux, Windows and macOS");
+compile_error!("brrr supports Linux, Windows and macOS");
 
 use crate::core::Command;
 
@@ -39,15 +39,19 @@ fn main() {
             println!("{}", core::USAGE);
             0
         }
-        Some(Command::Edit(edit)) => core::run_edit(&edit),
+        Some(Command::Edit(edit)) => {
+            core::config::migrate();
+            core::run_edit(&edit)
+        }
         Some(Command::Install) => platform::install(),
         Some(Command::Uninstall) => platform::uninstall(),
         Some(Command::Run { supervised, poll, ui }) => {
+            core::config::migrate();
             match core::instance::acquire() {
                 // Keep the lock file open for the life of the process.
                 Some(_lock) => platform::run(supervised, poll, ui),
                 None => {
-                    eprintln!("omapower: another Omapower instance is already running");
+                    eprintln!("brrr: another brrr instance is already running");
                     platform::already_running(ui);
                     core::instance::EXIT_BUSY
                 }

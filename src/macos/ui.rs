@@ -38,7 +38,7 @@ define_class!(
     // SAFETY: NSObject permits subclassing and all AppKit access is main-thread-only.
     #[unsafe(super = NSObject)]
     #[thread_kind = MainThreadOnly]
-    #[name = "OmapowerMenuTarget"]
+    #[name = "brrrMenuTarget"]
     #[ivars = Ivars]
     struct MenuTarget;
 
@@ -58,7 +58,7 @@ define_class!(
         #[unsafe(method(removeCommand:))]
         fn remove_command(&self, sender: &NSMenuItem) {
             let command = sender.title().to_string();
-            let alert = alert(self.mtm(), "Remove Watched Command", &format!("Stop watching “{command}”?"));
+            let alert = alert(self.mtm(), "Stop watching this app", &format!("Stop watching “{command}”?"));
             alert.addButtonWithTitle(&NSString::from_str("Remove"));
             alert.addButtonWithTitle(&NSString::from_str("Cancel"));
             activate(self.mtm());
@@ -70,7 +70,7 @@ define_class!(
         #[unsafe(method(addCommand:))]
         fn add_command(&self, _sender: &NSMenuItem) {
             let mtm = self.mtm();
-            let alert = alert(mtm, "Add Command", "Enter the process name to watch, such as cargo or swiftc.");
+            let alert = alert(mtm, "Add app", "Enter the process name to watch, such as ffmpeg or HandBrake.");
             let field = NSTextField::initWithFrame(NSTextField::alloc(mtm), NSRect::new(
                 NSPoint::new(0.0, 0.0), NSSize::new(300.0, 24.0),
             ));
@@ -159,7 +159,7 @@ impl MenuTarget {
         }
         self.render();
         let result = std::thread::Builder::new()
-            .name("omapower-menu".into())
+            .name("brrr-menu".into())
             .spawn(move || {
                 let result = work();
                 DispatchQueue::main().exec_async(move || {
@@ -224,7 +224,7 @@ impl MenuTarget {
         if let Some(button) = self.ivars().status.button(mtm) {
             let image = NSImage::imageWithSystemSymbolName_accessibilityDescription(
                 &NSString::from_str(symbol(state.profile)),
-                Some(&NSString::from_str("Omapower")),
+                Some(&NSString::from_str("brrr")),
             );
             if let Some(image) = &image {
                 image.setTemplate(true);
@@ -244,7 +244,7 @@ impl MenuTarget {
             state.enabled,
             ready && state.config_error.is_none(),
         );
-        let watched = self.item(&menu, "Watched Commands", None, false, true);
+        let watched = self.item(&menu, "Watched apps", None, false, true);
         let commands = NSMenu::new(mtm);
         commands.setAutoenablesItems(false);
         for command in &state.commands {
@@ -261,7 +261,7 @@ impl MenuTarget {
         }
         self.item(
             &commands,
-            "Add Command…",
+            "Add app…",
             Some(sel!(addCommand:)),
             false,
             ready,
@@ -329,7 +329,7 @@ fn alert(mtm: MainThreadMarker, title: &str, message: &str) -> Retained<NSAlert>
 }
 
 fn error(mtm: MainThreadMarker, message: &str) {
-    let alert = alert(mtm, "Omapower", message);
+    let alert = alert(mtm, "brrr", message);
     alert.addButtonWithTitle(&NSString::from_str("OK"));
     activate(mtm);
     alert.runModal();
@@ -360,7 +360,7 @@ pub fn run(
         target.render();
         let engine_events = events.clone();
         let engine = std::thread::Builder::new()
-            .name("omapower-engine".into())
+            .name("brrr-engine".into())
             .spawn(move || {
                 let frontend = Box::new(|state: &State| {
                     let state = state.clone();

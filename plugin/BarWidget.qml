@@ -12,10 +12,10 @@ import "Whitelist.js" as Whitelist
 // helper's command line, which updates the configuration the helper watches.
 BarWidget {
     id: root
-    moduleName: "raw.omapower"
+    moduleName: "raw.brrr"
 
-    property string binaryPath: decodeURIComponent(String(Qt.resolvedUrl("../bin/omapower")).replace(/^file:\/\//, ""))
-    property string statusPath: Quickshell.env("XDG_RUNTIME_DIR") + "/omapower-status.json"
+    property string binaryPath: decodeURIComponent(String(Qt.resolvedUrl("../bin/brrr")).replace(/^file:\/\//, ""))
+    property string statusPath: Quickshell.env("XDG_RUNTIME_DIR") + "/brrr-status.json"
     readonly property string powerProfile: {
         switch (PowerProfiles.profile) {
         case PowerProfile.Performance: return "performance"
@@ -122,7 +122,7 @@ BarWidget {
         visible: false
         source: Qt.resolvedUrl("Panel.qml")
         onLoaded: { root.injectPanel(); Qt.callLater(root.injectPanel) }
-        onStatusChanged: if (status === Loader.Error) console.error("Omapower: panel failed to load")
+        onStatusChanged: if (status === Loader.Error) console.error("brrr: panel failed to load")
     }
     WidgetButton {
         id: button

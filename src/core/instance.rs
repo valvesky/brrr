@@ -14,7 +14,7 @@ pub fn runtime_dir() -> PathBuf {
     }
     #[cfg(windows)]
     if let Some(dir) = std::env::var_os("LOCALAPPDATA") {
-        let dir = PathBuf::from(dir).join("omapower");
+        let dir = PathBuf::from(dir).join("brrr");
         let _ = std::fs::create_dir_all(&dir);
         return dir;
     }
@@ -24,11 +24,11 @@ pub fn runtime_dir() -> PathBuf {
 /// Wait briefly, so a restart can replace an instance that is still
 /// releasing its hold. The lock lasts as long as the returned file is open.
 pub fn acquire() -> Option<File> {
-    let path = runtime_dir().join("omapower.lock");
+    let path = runtime_dir().join("brrr.lock");
     let file = match File::options().create(true).truncate(false).write(true).open(&path) {
         Ok(file) => file,
         Err(error) => {
-            eprintln!("omapower: lock: {error}");
+            eprintln!("brrr: lock: {error}");
             return None;
         }
     };

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "raw.omapower",
-  "name": "Omapower",
+  "id": "raw.brrr",
+  "name": "brrr",
   "version": "2.0.0",
-  "description": "Automatically boost to the performance profile while chosen commands run",
+  "description": "Full power while something heavy is running, then quiet again",
   "author": "raw",
   "kinds": [
     "service",
@@ -14,8 +14,8 @@
     "barWidget": "plugin/BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Omapower",
-    "description": "Automatic boost status, switch and watched commands",
+    "displayName": "brrr",
+    "description": "Automatic boost, the switch, and the apps it watches",
     "category": "System",
     "allowMultiple": false
   }

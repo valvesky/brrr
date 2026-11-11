@@ -158,7 +158,7 @@ impl Power for PowerProfiles {
                 PATH,
                 Some(DEST),
                 "HoldProfile",
-                &("performance", "Whitelisted command running", "omapower"),
+                &("performance", "Heavy app running", "brrr"),
             );
             let result = match reply {
                 Ok(reply) => reply
