@@ -3,124 +3,131 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>brrr — full power while the heavy work runs</title>
-  <meta name="description" content="brrr switches your computer to its performance mode while the apps you choose are running, then puts the previous mode back. Windows, Linux, macOS, and Omarchy.">
+  <title>brrr: full power when you open something heavy</title>
+  <meta name="description" content="Full power when you open something heavy. Quiet again when you close it. For Windows, Linux, macOS and Omarchy.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#fafaf7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f120f" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <a class="skip" href="#content">Skip to content</a>
-  <header class="site-header">
-    <div class="bar">
-      <a class="wordmark" href="index.html">brrr</a>
-      <ul class="nav">
-        <li><a href="install.html">Install</a></li>
-        <li><a href="apps.html">Apps</a></li>
-        <li><a href="config.html">Config</a></li>
-        <li><a href="behaviour.html">Behaviour</a></li>
-        <li><a href="faq.html">FAQ</a></li>
-        <li><a href="uninstall.html">Uninstall</a></li>
-        <li><a href="https://github.com/valvesky/brrr">GitHub</a></li>
-      </ul>
-    </div>
+  <header class="top">
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/valvesky/brrr">GitHub</a>
+    </nav>
   </header>
 
-  <section class="hero">
-    <div class="hero-grid">
-      <div>
-        <p class="kicker">Windows 10 and 11 · Linux · macOS 12+ · Omarchy</p>
-        <h1>brrr</h1>
-        <p class="lede">Full power while the heavy work runs. Back to the mode you had when it stops.</p>
-        <p class="sub">brrr is the sound the fans make. It watches the programs you choose — a game, a zip, a video export, a compile — and switches the operating system’s performance mode on while one of them is running. When the last one exits, it puts back what was there before.</p>
-        <div class="hero-actions">
-          <a class="btn" href="#download">Download</a>
-          <a class="btn ghost" href="behaviour.html">How it behaves</a>
+  <main>
+    <section class="hero">
+      <img class="logo" src="icon.svg" width="88" height="88" alt="">
+      <h1>brrr</h1>
+      <p class="tagline">Full power when you open something heavy.<br>Quiet again when you close it.</p>
+
+      <div class="downloads">
+        <a class="dl primary" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-setup.exe">
+          <span class="os">Windows</span>
+          <span class="meta">Installer · Windows 10 &amp; 11</span>
+        </a>
+        <a class="dl" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-linux-x86_64.tar.gz">
+          <span class="os">Linux</span>
+          <span class="meta">x86_64 · .tar.gz</span>
+        </a>
+        <a class="dl" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-macos.dmg">
+          <span class="os">macOS</span>
+          <span class="meta">Universal · macOS 12+</span>
+        </a>
+      </div>
+
+      <p class="also">
+        <span>Linux on ARM: <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-linux-aarch64.tar.gz">aarch64</a></span>
+        <span>Omarchy: <a href="#omarchy">plugin</a></span>
+        <span><a href="https://github.com/valvesky/brrr">Source on GitHub</a></span>
+      </p>
+    </section>
+
+    <section id="install" class="section">
+      <h2>Install</h2>
+      <div class="grid">
+        <article id="windows">
+          <h3>Windows</h3>
+          <ol>
+            <li>Run <code>brrr-windows-setup.exe</code>. No administrator rights needed.</li>
+            <li>Its icon appears in the notification area, and it starts when you sign in.</li>
+          </ol>
+        </article>
+
+        <article id="linux">
+          <h3>Linux</h3>
+          <ol>
+            <li>Make sure power-profiles-daemon or tuned-ppd is running. Most distributions have one.</li>
+            <li>Put <code>brrr</code> on your <code>PATH</code> and start it:</li>
+          </ol>
+<pre><code>tar -xzf brrr-linux-x86_64.tar.gz
+mv brrr ~/.local/bin/
+brrr --install   # at every login
+brrr --tray &amp;    # and now</code></pre>
+        </article>
+
+        <article id="macos">
+          <h3>macOS</h3>
+          <ol>
+            <li>Open <code>brrr-macos.dmg</code> and drag brrr to Applications.</li>
+            <li>Open it. The first time, right-click it and choose <em>Open</em>.</li>
+            <li>From its menu bar icon, choose <em>Allow Power Mode Switching…</em> and enter your password once.</li>
+          </ol>
+        </article>
+
+        <article id="omarchy">
+          <h3>Omarchy</h3>
+<pre><code>omarchy plugin add \
+  https://github.com/valvesky/brrr.git \
+  --enable</code></pre>
+          <p>That’s it. Nothing to build.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="faq" class="section">
+      <h2>FAQ</h2>
+      <div class="grid faq">
+        <div>
+          <h3>How do I add an app?</h3>
+          <p>Choose <em>Add app…</em> in brrr’s menu (or the Omarchy widget) and type its process name, like <code>ffmpeg</code>. On Windows, leave off <code>.exe</code>.</p>
+        </div>
+        <div>
+          <h3>Which apps are boosted by default?</h3>
+          <p>7-Zip, ffmpeg, Blender, OBS, HandBrake, DaVinci Resolve and the usual compilers, plus WinRAR, After Effects and Photoshop on Windows.</p>
+        </div>
+        <div>
+          <h3>Why didn’t it switch on Windows?</h3>
+          <p>Best performance is a power mode of the Balanced plan. On another plan brrr switches to High performance if you have it, and on High or Ultimate performance you’re already at full power.</p>
+        </div>
+        <div>
+          <h3>Why does macOS ask for my password?</h3>
+          <p>Switching Low Power Mode needs administrator rights, so brrr asks once and allows only those power commands. The app isn’t notarized, which is why the first launch needs right-click › <em>Open</em>.</p>
+        </div>
+        <div>
+          <h3>Does it work on battery?</h3>
+          <p>Yes, and it drains the battery faster while a heavy app runs. Turn off automatic boost in the menu when you’d rather save power.</p>
+        </div>
+        <div>
+          <h3>How do I uninstall it?</h3>
+          <ul class="plain">
+            <li>Windows: Settings › Apps › brrr</li>
+            <li>Linux: <code>brrr --uninstall</code>, then delete the file</li>
+            <li>Omarchy: <code>omarchy plugin remove raw.brrr</code></li>
+            <li>macOS: run this, then trash the app:<br><code>/Applications/<wbr>brrr.app/<wbr>Contents/<wbr>MacOS/<wbr><span class="nowrap">brrr --uninstall</span></code></li>
+          </ul>
         </div>
       </div>
-      <figure class="mascot">
-        <img src="logo.png" width="735" height="699" alt="A character with a fan for a mouth, steam rising past pointed ears.">
-        <figcaption>Art by <a href="https://twitter.com/monky_sm/status/1744264103558779075">@monky_sm</a>. Not covered by the MIT license.</figcaption>
-      </figure>
-    </div>
-  </section>
-
-  <main id="content" class="wrap">
-    <p class="section-label">What it does</p>
-    <h2>Performance mode, only while you need it</h2>
-    <div class="split">
-      <article class="fact">
-        <strong>You pick the apps</strong>
-        <p>A list of compilers is already there. Add any other process name from the tray, or with <code>brrr --add NAME</code>. Names are at most 15 bytes, and on Windows you leave off <code>.exe</code>.</p>
-      </article>
-      <article class="fact">
-        <strong>The whole machine switches</strong>
-        <p>The power mode is system-wide. While brrr is boosting, everything runs in the performance mode, not only the program that triggered it.</p>
-      </article>
-      <article class="fact">
-        <strong>Your choice wins</strong>
-        <p>When the work finishes, brrr restores the mode it found. If you change the mode yourself in the middle, it leaves that choice alone until the watched programs exit.</p>
-      </article>
-    </div>
-
-    <p class="section-label" id="download">Download</p>
-    <h2>Latest release</h2>
-    <p>Each button is the file from the <a href="https://github.com/valvesky/brrr/releases/latest">latest GitHub release</a>. Releases are published when a version tag is pushed. If a file is not there yet, open the <a href="https://github.com/valvesky/brrr/releases">releases page</a>. Install steps are on the <a href="install.html">install page</a>.</p>
-    <div class="downloads">
-      <a class="dl" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-setup.exe">
-        <span class="dl-os">Windows 10 and 11</span>
-        <span class="dl-file">brrr-windows-setup.exe</span>
-        <span class="dl-note">One installer for x64 and ARM. No administrator account.</span>
-      </a>
-      <a class="dl" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-macos.dmg">
-        <span class="dl-os">macOS 12 or later</span>
-        <span class="dl-file">brrr-macos.dmg</span>
-        <span class="dl-note">Universal app, Apple silicon and Intel. Not notarized.</span>
-      </a>
-      <a class="dl" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-linux-x86_64.tar.gz">
-        <span class="dl-os">Linux, x86_64</span>
-        <span class="dl-file">brrr-linux-x86_64.tar.gz</span>
-        <span class="dl-note">Static binary. Needs power-profiles-daemon or tuned-ppd.</span>
-      </a>
-      <a class="dl" href="https://github.com/valvesky/brrr/releases/latest/download/brrr-linux-aarch64.tar.gz">
-        <span class="dl-os">Linux, aarch64</span>
-        <span class="dl-file">brrr-linux-aarch64.tar.gz</span>
-        <span class="dl-note">Same program, for 64-bit ARM.</span>
-      </a>
-    </div>
-    <p>Windows without an installer: <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-x86_64.exe"><code>brrr-windows-x86_64.exe</code></a> and <a href="https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-aarch64.exe"><code>brrr-windows-aarch64.exe</code></a>. On Omarchy, skip the downloads and <a href="install.html#omarchy">add the plugin</a>.</p>
-
-    <p class="section-label">Where it runs</p>
-    <h2>The same idea, each system’s own switch</h2>
-    <div class="split">
-      <article class="fact">
-        <strong>Windows</strong>
-        <p>On the Balanced plan, Power mode goes to Best performance. No administrator rights. Windows 10 version 1809 or later, and Windows 11. <a href="install.html#windows">Install</a></p>
-      </article>
-      <article class="fact">
-        <strong>Linux</strong>
-        <p>A performance hold on power-profiles-daemon, or tuned-ppd which speaks the same interface. A tray icon your desktop draws itself. <a href="install.html#linux">Install</a></p>
-      </article>
-      <article class="fact">
-        <strong>macOS</strong>
-        <p>Turns Low Power Mode off for the current power source and, on MacBook Pros that have it, turns High Power Mode on. One password, once. <a href="install.html#macos">Install</a></p>
-      </article>
-    </div>
-    <p>Read <a href="apps.html">how to add apps</a>, the <a href="config.html">config file</a>, <a href="behaviour.html">what it restores</a>, or <a href="faq.html">troubleshooting</a>.</p>
+    </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="wrap">
-      <p>brrr is <a href="https://github.com/valvesky/brrr/blob/master/LICENSE">MIT licensed</a>. It was formerly called Omapower. The picture is by <a href="https://twitter.com/monky_sm/status/1744264103558779075">@monky_sm</a> and is not part of that license. The bolt icon is Font Awesome’s, <a href="https://fontawesome.com/license/free">CC BY 4.0</a>.</p>
-      <ul class="footer-links">
-        <li><a href="install.html">Install</a></li>
-        <li><a href="apps.html">Apps</a></li>
-        <li><a href="config.html">Config</a></li>
-        <li><a href="behaviour.html">Behaviour</a></li>
-        <li><a href="faq.html">FAQ</a></li>
-        <li><a href="uninstall.html">Uninstall</a></li>
-        <li><a href="https://github.com/valvesky/brrr/issues">Issues</a></li>
-      </ul>
-    </div>
+  <footer>
+    <p><a href="https://github.com/valvesky/brrr">GitHub</a> · <a href="https://github.com/valvesky/brrr/blob/master/LICENSE">MIT license</a> · Bolt icon by <a href="https://fontawesome.com/license/free">Font Awesome</a></p>
   </footer>
 </body>
 </html>
