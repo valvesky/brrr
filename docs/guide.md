@@ -21,6 +21,18 @@ no administrator rights. It adds brrr to the Start menu and, unless you untick i
 brrr whenever you sign in. Its icon appears in the notification area (you may have to drag it
 out of the overflow). *Start at login* in its menu turns the sign-in start on or off later.
 
+brrr isn't code-signed yet, so Microsoft Defender SmartScreen may warn about it:
+
+- **Edge says the file isn't commonly downloaded:** open the download's **…** menu, choose
+  **Keep**, then **Show more** › **Keep anyway**.
+- **Edge blocks it with no Keep option:** download it in PowerShell instead, with
+  `curl.exe -LO https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-setup.exe`.
+- **Windows says *Windows protected your PC* when you run it:** choose **More info** ›
+  **Run anyway**.
+
+Every release is built from this repository's source by the
+[Release workflow](https://github.com/valvesky/brrr/actions/workflows/release.yml).
+
 Prefer no installer? `brrr-windows-x86_64.exe` and `brrr-windows-aarch64.exe` are the same
 program on their own: put one somewhere it can stay and run it, and use *Start at login* (or
 `brrr --install`).

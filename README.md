@@ -23,6 +23,15 @@ brrr is the sound your fans make. Open a game, zip a big folder, export a video,
 [releases](https://github.com/valvesky/brrr/releases) and run it. It needs no administrator
 rights, and it starts brrr when you sign in unless you untick that.
 
+> **Windows warns about the download?** brrr isn't code-signed yet, so Microsoft Defender
+> SmartScreen doesn't know it. In Edge, open the download's **…** menu and choose **Keep**, then
+> **Show more** › **Keep anyway**. If Windows then says *Windows protected your PC*, choose
+> **More info** › **Run anyway**. If Edge blocks the file with no Keep option, download it in
+> PowerShell instead:
+> `curl.exe -LO https://github.com/valvesky/brrr/releases/latest/download/brrr-windows-setup.exe`.
+> Every release is built from this repository's source by
+> [GitHub Actions](https://github.com/valvesky/brrr/actions/workflows/release.yml).
+
 **Linux** (any desktop with a tray: KDE Plasma, waybar, GNOME with AppIndicator support, …):
 download `brrr-linux-x86_64.tar.gz` (or `aarch64`) from the
 [releases](https://github.com/valvesky/brrr/releases), put `brrr` on your `PATH`, then run
