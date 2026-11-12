@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "raw.brrr",
   "name": "brrr",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Full power while something heavy is running, then quiet again",
   "author": "raw",
   "kinds": [
