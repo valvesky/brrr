@@ -13,62 +13,21 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, DestroyIcon, HICON, ICONINFO,
 };
 
-const SIZES: [i32; 6] = [16, 20, 24, 32, 48, 64];
+/// Windows' small icon (16 px) at every standard display scale from 100% to
+/// 400%. Keep in step with scripts/render-tray-icons.sh.
+const SIZES: [i32; 10] = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64];
 macro_rules! assets {
     ($glyph:literal, $colour:literal) => {
-        [
-            include_bytes!(concat!(
-                "../../assets/tray/",
-                $glyph,
-                "-",
-                $colour,
-                "-16.png"
-            ))
-            .as_slice(),
-            include_bytes!(concat!(
-                "../../assets/tray/",
-                $glyph,
-                "-",
-                $colour,
-                "-20.png"
-            ))
-            .as_slice(),
-            include_bytes!(concat!(
-                "../../assets/tray/",
-                $glyph,
-                "-",
-                $colour,
-                "-24.png"
-            ))
-            .as_slice(),
-            include_bytes!(concat!(
-                "../../assets/tray/",
-                $glyph,
-                "-",
-                $colour,
-                "-32.png"
-            ))
-            .as_slice(),
-            include_bytes!(concat!(
-                "../../assets/tray/",
-                $glyph,
-                "-",
-                $colour,
-                "-48.png"
-            ))
-            .as_slice(),
-            include_bytes!(concat!(
-                "../../assets/tray/",
-                $glyph,
-                "-",
-                $colour,
-                "-64.png"
-            ))
-            .as_slice(),
-        ]
+        assets!(@ $glyph, $colour, [16, 20, 24, 28, 32, 36, 40, 48, 56, 64])
+    };
+    (@ $glyph:literal, $colour:literal, [$($size:literal),*]) => {
+        [$(
+            include_bytes!(concat!("../../assets/tray/", $glyph, "-", $colour, "-", $size, ".png"))
+                .as_slice()
+        ),*]
     };
 }
-const ASSETS: [[[&[u8]; 6]; 2]; 3] = [
+const ASSETS: [[[&[u8]; SIZES.len()]; 2]; 3] = [
     [assets!("bolt", "black"), assets!("bolt", "white")],
     [assets!("yin-yang", "black"), assets!("yin-yang", "white")],
     [assets!("recycle", "black"), assets!("recycle", "white")],
@@ -82,13 +41,10 @@ fn glyph(profile: Profile) -> usize {
     }
 }
 
-fn nearest_size(size: i32) -> usize {
-    SIZES
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, candidate)| (**candidate - size).abs())
-        .map(|(index, _)| index)
-        .unwrap_or(0)
+/// The smallest image at least as large as requested: Windows then only ever
+/// shrinks it, which stays sharp, instead of stretching a smaller one.
+fn size_index(size: i32) -> usize {
+    SIZES.iter().position(|candidate| *candidate >= size).unwrap_or(SIZES.len() - 1)
 }
 
 fn taskbar_is_dark() -> bool {
@@ -139,7 +95,7 @@ pub struct Icon(HICON);
 impl Icon {
     pub fn new(profile: Profile, requested_size: i32) -> Result<Self, String> {
         let bytes =
-            ASSETS[glyph(profile)][usize::from(taskbar_is_dark())][nearest_size(requested_size)];
+            ASSETS[glyph(profile)][usize::from(taskbar_is_dark())][size_index(requested_size)];
         let (width, height, mut pixels) = decode(bytes)?;
         premultiply(&mut pixels);
         let info = BITMAPINFO {
@@ -233,9 +189,11 @@ mod tests {
 
     #[test]
     fn sizes_glyphs_and_alpha() {
-        assert_eq!(nearest_size(19), 1);
-        assert_eq!(nearest_size(30), 3);
-        assert_eq!(nearest_size(100), 5);
+        assert_eq!(SIZES[size_index(16)], 16);
+        assert_eq!(SIZES[size_index(19)], 20);
+        assert_eq!(SIZES[size_index(28)], 28);
+        assert_eq!(SIZES[size_index(30)], 32);
+        assert_eq!(SIZES[size_index(100)], 64);
         assert_eq!(glyph(Profile::Unknown), glyph(Profile::Balanced));
         let mut pixels = [255, 100, 0, 128, 1, 2, 3, 0];
         premultiply(&mut pixels);
