@@ -189,6 +189,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "brrr"
+version = "2.0.0"
+dependencies = [
+ "block2",
+ "dispatch2",
+ "embed-manifest",
+ "ksni",
+ "libc",
+ "notify",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "png",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "windows-sys",
+ "zbus",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -779,27 +800,6 @@ dependencies = [
  "bitflags",
  "objc2",
  "objc2-foundation",
-]
-
-[[package]]
-name = "brrr"
-version = "2.0.0"
-dependencies = [
- "block2",
- "dispatch2",
- "embed-manifest",
- "ksni",
- "libc",
- "notify",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "png",
- "serde",
- "serde_json",
- "signal-hook",
- "windows-sys",
- "zbus",
 ]
 
 [[package]]
