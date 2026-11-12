@@ -71,7 +71,7 @@ fn decode_argb(png: &[u8]) -> Option<ksni::Icon> {
 fn edit(change: Edit) {
     std::thread::spawn(move || {
         if let Err(error) = config::edit(&change) {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             notify(&format!("Couldn't change the configuration: {error}"));
         }
     });
@@ -79,7 +79,7 @@ fn edit(change: Edit) {
 
 fn notify(message: &str) {
     let _ = Command::new("notify-send")
-        .args(["--app-name=Omapower", "Omapower", message])
+        .args(["--app-name=brrr", "brrr", message])
         .stdin(Stdio::null())
         .spawn();
 }
@@ -87,11 +87,11 @@ fn notify(message: &str) {
 /// Ask for a command name with the desktop's own dialog tool.
 fn ask_for_command() {
     std::thread::spawn(|| {
-        let prompt = "Command to watch (its process name, e.g. make):";
+        let prompt = "App to watch (its process name, for example ffmpeg):";
         let attempts: [(&str, Vec<&str>); 3] = [
-            ("zenity", vec!["--entry", "--title=Omapower", "--text", prompt]),
-            ("kdialog", vec!["--title", "Omapower", "--inputbox", prompt]),
-            ("qarma", vec!["--entry", "--title=Omapower", "--text", prompt]),
+            ("zenity", vec!["--entry", "--title=brrr", "--text", prompt]),
+            ("kdialog", vec!["--title", "brrr", "--inputbox", prompt]),
+            ("qarma", vec!["--entry", "--title=brrr", "--text", prompt]),
         ];
         for (program, args) in attempts {
             let Ok(output) = Command::new(program).args(&args).stdin(Stdio::null()).output() else { continue };
@@ -136,16 +136,28 @@ fn data_home() -> PathBuf {
 }
 
 pub fn autostart_path() -> PathBuf {
+    config_home().join("autostart/brrr.desktop")
+}
+
+fn legacy_autostart_path() -> PathBuf {
     config_home().join("autostart/omapower.desktop")
+}
+
+fn legacy_icon_path() -> PathBuf {
+    data_home().join("icons/hicolor/scalable/apps/omapower.svg")
+}
+
+pub fn autostart_enabled() -> bool {
+    autostart_path().exists() || legacy_autostart_path().exists()
 }
 
 /// The flat app icon, in the user's icon theme, so desktops show it for the
 /// login entry (GNOME Tweaks, KDE's Autostart settings, …).
 pub fn icon_path() -> PathBuf {
-    data_home().join("icons/hicolor/scalable/apps/omapower.svg")
+    data_home().join("icons/hicolor/scalable/apps/brrr.svg")
 }
 
-const ICON: &[u8] = include_bytes!("../../assets/icon/omapower.svg");
+const ICON: &[u8] = include_bytes!("../../assets/icon/brrr.svg");
 
 fn remove(path: &std::path::Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
@@ -165,7 +177,10 @@ fn write(path: &std::path::Path, contents: &[u8]) -> Result<(), String> {
 pub fn set_autostart(enabled: bool) -> Result<(), String> {
     let path = autostart_path();
     if !enabled {
-        return remove(&path).and(remove(&icon_path()));
+        return remove(&path)
+            .and(remove(&icon_path()))
+            .and(remove(&legacy_autostart_path()))
+            .and(remove(&legacy_icon_path()));
     }
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     // Desktop entry Exec quoting: escape \ " ` $ inside double quotes.
@@ -173,24 +188,48 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
         if matches!(c, '\\' | '"' | '`' | '$') { vec!['\\', c] } else { vec![c] }
     }).collect();
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=Omapower\nComment=Full power while you compile\n\
-         Exec=\"{quoted}\" --tray\nIcon=omapower\nTerminal=false\n\
+        "[Desktop Entry]\nType=Application\nName=brrr\nComment=Full power when something heavy is open\n\
+         Exec=\"{quoted}\" --tray\nIcon=brrr\nTerminal=false\n\
          X-GNOME-Autostart-enabled=true\n"
     );
     // The icon is a nicety: a login item without it still works.
     if let Err(error) = write(&icon_path(), ICON) {
-        eprintln!("omapower: icon: {error}");
+        eprintln!("brrr: icon: {error}");
     }
-    write(&path, entry.as_bytes())
+    write(&path, entry.as_bytes())?;
+    // Drop the pre-rename login item so the next login starts brrr only.
+    let _ = remove(&legacy_autostart_path());
+    let _ = remove(&legacy_icon_path());
+    Ok(())
+}
+
+/// If the previous omapower login item is still installed, replace it with one
+/// that starts this binary. An existing brrr login item is left as it is.
+pub fn migrate_autostart() {
+    if !legacy_autostart_path().exists() && !legacy_icon_path().exists() {
+        return;
+    }
+    if autostart_path().exists() {
+        let _ = remove(&legacy_autostart_path());
+        let _ = remove(&legacy_icon_path());
+        return;
+    }
+    if legacy_autostart_path().exists() {
+        if let Err(error) = set_autostart(true) {
+            eprintln!("brrr: could not move the login item to the new name: {error}");
+        }
+    } else {
+        let _ = remove(&legacy_icon_path());
+    }
 }
 
 impl ksni::Tray for Tray {
     fn id(&self) -> String {
-        "omapower".into()
+        "brrr".into()
     }
 
     fn title(&self) -> String {
-        "Omapower".into()
+        "brrr".into()
     }
 
     fn category(&self) -> ksni::Category {
@@ -207,7 +246,7 @@ impl ksni::Tray for Tray {
 
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
-            title: "Omapower".into(),
+            title: "brrr".into(),
             description: self.state.summary(),
             icon_name: icon_name(self.state.profile).into(),
             icon_pixmap: Vec::new(),
@@ -243,7 +282,7 @@ impl ksni::Tray for Tray {
         }
         commands.push(
             StandardItem {
-                label: "Add Command…".into(),
+                label: "Add app…".into(),
                 icon_name: "list-add-symbolic".into(),
                 enabled: state.config_error.is_none(),
                 activate: Box::new(|_: &mut Self| ask_for_command()),
@@ -264,7 +303,7 @@ impl ksni::Tray for Tray {
             }
             .into(),
             SubMenu {
-                label: "Watched Commands".into(),
+                label: "Watched apps".into(),
                 enabled: state.config_error.is_none(),
                 submenu: commands,
                 ..Default::default()
@@ -279,9 +318,9 @@ impl ksni::Tray for Tray {
             .into(),
             CheckmarkItem {
                 label: "Start at Login".into(),
-                checked: autostart_path().exists(),
+                checked: autostart_enabled(),
                 activate: Box::new(|_: &mut Self| {
-                    if let Err(error) = set_autostart(!autostart_path().exists()) {
+                    if let Err(error) = set_autostart(!autostart_enabled()) {
                         notify(&format!("Couldn't change the login item: {error}"));
                     }
                 }),

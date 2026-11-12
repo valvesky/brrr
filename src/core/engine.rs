@@ -130,7 +130,7 @@ impl State {
         } else if self.suppressed {
             format!("Paused after a manual change until {} finishes", active())
         } else {
-            "Waiting for a build".into()
+            "Idle — waiting for a heavy app".into()
         }
     }
 }
@@ -235,7 +235,7 @@ impl Engine {
     }
 
     fn fail(&mut self, message: &str) {
-        eprintln!("omapower: {message}");
+        eprintln!("brrr: {message}");
         if self.exit.is_none() {
             self.exit = Some(1);
         }
@@ -288,7 +288,7 @@ impl Engine {
                 self.cookie = cookie;
                 self.state.holding = self.released_cookie != Some(cookie);
                 eprintln!(
-                    "omapower: hold acquired: cookie={cookie} retained={}",
+                    "brrr: hold acquired: cookie={cookie} retained={}",
                     if self.state.holding { "yes" } else { "no (already released by daemon)" }
                 );
                 if !self.state.holding {
@@ -299,7 +299,7 @@ impl Engine {
             Err(AcquireError::Rejected(message)) => {
                 // Don't retry or restart in a loop: wait until the matching
                 // commands have all exited.
-                eprintln!("omapower: performance hold rejected: {message}");
+                eprintln!("brrr: performance hold rejected: {message}");
                 self.state.rejected = true;
             }
             Err(AcquireError::Ambiguous(message)) => {
@@ -313,7 +313,7 @@ impl Engine {
     fn release_done(&mut self, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                eprintln!("omapower: hold release confirmed");
+                eprintln!("brrr: hold release confirmed");
                 self.state.holding = false;
                 self.cookie = 0;
                 self.release_failures = 0;
@@ -321,7 +321,7 @@ impl Engine {
             Err(message) if self.state.holding => {
                 // A failed release is not a release. Keep the cookie and retry;
                 // after three failures exit, which drops the hold.
-                eprintln!("omapower: release: {message}");
+                eprintln!("brrr: release: {message}");
                 self.release_failures += 1;
                 if self.release_failures >= 3 {
                     self.fail("release failed three times; disconnecting to drop the hold");
@@ -338,7 +338,7 @@ impl Engine {
             return;
         }
         eprintln!(
-            "omapower: {} owner: {} -> {}",
+            "brrr: {} owner: {} -> {}",
             self.power.name(),
             self.owner.as_deref().unwrap_or("unavailable"),
             owner.as_deref().unwrap_or("unavailable")
@@ -364,7 +364,7 @@ impl Engine {
             Pending::Releasing => "release",
             Pending::Idle => "none",
         };
-        eprintln!("omapower: ProfileReleased: cookie={cookie} held-cookie={} pending={pending}", self.cookie);
+        eprintln!("brrr: ProfileReleased: cookie={cookie} held-cookie={} pending={pending}", self.cookie);
         if self.pending == Pending::Acquiring {
             self.released_cookie = Some(cookie);
         }
@@ -389,7 +389,7 @@ impl Engine {
             }
             Err(error) => {
                 eprintln!(
-                    "omapower: {}: {error}; watching nothing until it is fixed",
+                    "brrr: {}: {error}; watching nothing until it is fixed",
                     self.config_path.display()
                 );
                 self.state.config_error = Some(error);
@@ -435,7 +435,7 @@ impl Engine {
     fn start(&mut self, operation: Pending, owner: &str) {
         let acquiring = operation == Pending::Acquiring;
         eprintln!(
-            "omapower: {}: owner={owner} cookie={}",
+            "brrr: {}: owner={owner} cookie={}",
             if acquiring { "requesting performance hold" } else { "releasing performance hold" },
             self.cookie
         );
@@ -453,7 +453,7 @@ impl Engine {
     fn report(&mut self) {
         let json = self.state.to_json();
         if json != self.last_status {
-            eprintln!("omapower: state {json}");
+            eprintln!("brrr: state {json}");
             self.last_status = json;
         }
         if self.last_state.as_ref() != Some(&self.state) {
@@ -467,3 +467,14 @@ impl Engine {
 
 /// A Sender that platform threads clone to post events.
 pub type Events = Sender<Event>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_summary_names_a_heavy_app() {
+        let state = State { enabled: true, available: true, ..State::default() };
+        assert_eq!(state.summary(), "Idle — waiting for a heavy app");
+    }
+}

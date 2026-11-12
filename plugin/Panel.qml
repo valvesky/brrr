@@ -6,7 +6,7 @@ import qs.Ui
 
 Panel {
     id: root
-    moduleName: "raw.omapower"
+    moduleName: "raw.brrr"
     manageIpc: false
     property var anchorItem: null
     property var hostWidget: null

@@ -18,7 +18,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
 const OWNER: &str = "pmset";
-const SETUP_REASON: &str = "Allow Omapower to switch power modes from its menu";
+const SETUP_REASON: &str = "Allow brrr to switch power modes from its menu";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Source {
@@ -337,7 +337,7 @@ impl Power {
         let worker_events = events.clone();
         let wake = sender.clone();
         let thread = std::thread::Builder::new()
-            .name("omapower-pmset".into())
+            .name("brrr-pmset".into())
             .spawn(move || {
                 autoreleasepool(|_| {
                     // Notifications cover Low Power Mode; the 30-second refresh
@@ -388,7 +388,7 @@ impl Power {
         if let Some(thread) = self.thread.take() {
             let _ = self.control.0.send(Request::Shutdown);
             if thread.join().is_err() {
-                eprintln!("omapower: power worker panicked; recovery journal retained");
+                eprintln!("brrr: power worker panicked; recovery journal retained");
             }
         }
     }
@@ -559,7 +559,7 @@ impl Worker {
                 if self.changes.is_empty() {
                     return Err(AcquireError::Rejected(error));
                 }
-                eprintln!("omapower: optional High Power Mode unavailable: {error}");
+                eprintln!("brrr: optional High Power Mode unavailable: {error}");
                 break;
             }
             self.refresh();
@@ -629,7 +629,7 @@ impl Worker {
 
     fn run(&mut self, receiver: Receiver<Request>) {
         if let Err(error) = self.restore() {
-            eprintln!("omapower: saved power mode awaits restoration: {error}");
+            eprintln!("brrr: saved power mode awaits restoration: {error}");
         }
         self.availability();
         self.refresh();
@@ -682,7 +682,7 @@ impl Worker {
         }
         if let Err(error) = self.restore() {
             eprintln!(
-                "omapower: restore power mode at shutdown: {error}; recovery journal retained"
+                "brrr: restore power mode at shutdown: {error}; recovery journal retained"
             );
         }
     }

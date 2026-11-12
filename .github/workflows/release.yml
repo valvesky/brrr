@@ -24,40 +24,40 @@ jobs:
             runner: ubuntu-24.04
             setup: rustup target add x86_64-unknown-linux-musl
             build: sh scripts/build-release.sh linux
-            package: mkdir -p pkg && cp bin/omapower-x86_64 pkg/omapower && tar -C pkg -czf omapower-linux-x86_64.tar.gz omapower
-            asset: omapower-linux-x86_64.tar.gz
+            package: mkdir -p pkg && cp bin/brrr-x86_64 pkg/brrr && tar -C pkg -czf brrr-linux-x86_64.tar.gz brrr
+            asset: brrr-linux-x86_64.tar.gz
           - name: Linux aarch64
             target: aarch64-unknown-linux-musl
             arch: aarch64
             runner: ubuntu-24.04-arm
             setup: rustup target add aarch64-unknown-linux-musl
             build: sh scripts/build-release.sh linux
-            package: mkdir -p pkg && cp bin/omapower-aarch64 pkg/omapower && tar -C pkg -czf omapower-linux-aarch64.tar.gz omapower
-            asset: omapower-linux-aarch64.tar.gz
+            package: mkdir -p pkg && cp bin/brrr-aarch64 pkg/brrr && tar -C pkg -czf brrr-linux-aarch64.tar.gz brrr
+            asset: brrr-linux-aarch64.tar.gz
           - name: Windows x86_64
             target: x86_64-pc-windows-msvc
             arch: x86_64
             runner: windows-latest
             setup: rustup target add x86_64-pc-windows-msvc
             build: sh scripts/build-release.sh windows
-            package: cp dist/omapower-windows-x86_64.exe omapower-windows-x86_64.exe
-            asset: omapower-windows-x86_64.exe
+            package: cp dist/brrr-windows-x86_64.exe brrr-windows-x86_64.exe
+            asset: brrr-windows-x86_64.exe
           - name: Windows ARM64
             target: aarch64-pc-windows-msvc
             arch: aarch64
             runner: windows-11-arm
             setup: rustup target add aarch64-pc-windows-msvc
             build: sh scripts/build-release.sh windows
-            package: cp dist/omapower-windows-aarch64.exe omapower-windows-aarch64.exe
-            asset: omapower-windows-aarch64.exe
+            package: cp dist/brrr-windows-aarch64.exe brrr-windows-aarch64.exe
+            asset: brrr-windows-aarch64.exe
           - name: macOS
             target: aarch64-apple-darwin
             arch: aarch64
             runner: macos-latest
             setup: rustup target add aarch64-apple-darwin x86_64-apple-darwin
             build: sh scripts/build-release.sh macos
-            package: cp dist/omapower-macos.dmg omapower-macos.dmg
-            asset: omapower-macos.dmg
+            package: cp dist/brrr-macos.dmg brrr-macos.dmg
+            asset: brrr-macos.dmg
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -65,7 +65,7 @@ jobs:
     env:
       # Name the architecture: on the Windows ARM runner the default Rust
       # toolchain and uname both report x86_64.
-      OMAPOWER_ARCH: ${{ matrix.arch }}
+      BRRR_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v7
       - run: ${{ matrix.setup }}
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          pattern: omapower-windows-*.exe
+          pattern: brrr-windows-*.exe
           path: dist
           merge-multiple: true
       - name: Install Inno Setup
@@ -101,8 +101,8 @@ jobs:
       - run: sh scripts/build-release.sh windows-installer
       - uses: actions/upload-artifact@v7
         with:
-          name: omapower-windows-setup.exe
-          path: dist/omapower-windows-setup.exe
+          name: brrr-windows-setup.exe
+          path: dist/brrr-windows-setup.exe
           if-no-files-found: error
 
   publish:

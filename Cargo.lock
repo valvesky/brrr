@@ -782,7 +782,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "omapower"
+name = "brrr"
 version = "2.0.0"
 dependencies = [
  "block2",

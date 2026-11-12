@@ -1,27 +1,27 @@
 #!/bin/sh
-# Build Omapower's release binaries. Each operating system gets its own
+# Build brrr's release binaries. Each operating system gets its own
 # native build; run this on (or for) the system named:
 #
-#   scripts/build-release.sh linux     bin/omapower-$(uname -m): static (musl), for
+#   scripts/build-release.sh linux     bin/brrr-$(uname -m): static (musl), for
 #                                      the Omarchy plugin and any other Linux system
-#   scripts/build-release.sh windows   dist/omapower-windows-$(arch).exe
+#   scripts/build-release.sh windows   dist/brrr-windows-$(arch).exe
 #   scripts/build-release.sh windows-installer
-#                                      dist/omapower-windows-setup.exe, from both
+#                                      dist/brrr-windows-setup.exe, from both
 #                                      Windows binaries already in dist/ (Inno Setup)
-#   scripts/build-release.sh macos     dist/Omapower.app, a universal (arm64 + x86_64)
-#                                      menu bar app, and dist/omapower-macos.dmg
+#   scripts/build-release.sh macos     dist/brrr.app, a universal (arm64 + x86_64)
+#                                      menu bar app, and dist/brrr-macos.dmg
 #
 # No CPU-specific flags: the binaries run on any machine of their architecture.
 set -eu
 cd "$(dirname -- "$0")/.."
 os=${1:?usage: scripts/build-release.sh linux|windows|windows-installer|macos}
 
-# OMAPOWER_ARCH overrides the detected architecture (x86_64 or aarch64), e.g.
+# BRRR_ARCH overrides the detected architecture (x86_64 or aarch64), e.g.
 # where an emulated shell reports x86_64 on an ARM machine.
-case ${OMAPOWER_ARCH:-$(uname -m)} in
+case ${BRRR_ARCH:-$(uname -m)} in
   x86_64 | amd64 | AMD64) arch=x86_64 ;;
   aarch64 | arm64 | ARM64) arch=aarch64 ;;
-  *) echo "unsupported architecture: ${OMAPOWER_ARCH:-$(uname -m)}" >&2; exit 1 ;;
+  *) echo "unsupported architecture: ${BRRR_ARCH:-$(uname -m)}" >&2; exit 1 ;;
 esac
 
 # Argument errors exit 2 before touching anything: a cheap smoke test.
@@ -35,8 +35,8 @@ case $os in
   linux)
     target=$arch-unknown-linux-musl
     cargo build --release --locked --target "$target"
-    out=bin/omapower-$arch
-    cp "target/$target/release/omapower" "$out"
+    out=bin/brrr-$arch
+    cp "target/$target/release/brrr" "$out"
     chmod 755 "$out"
     smoke "$out"
     ;;
@@ -44,8 +44,8 @@ case $os in
     target=$arch-pc-windows-msvc
     cargo build --release --locked --target "$target"
     mkdir -p dist
-    out=dist/omapower-windows-$arch.exe
-    cp "target/$target/release/omapower.exe" "$out"
+    out=dist/brrr-windows-$arch.exe
+    cp "target/$target/release/brrr.exe" "$out"
     smoke "$out"
     # Clean Windows installs lack the Visual C++ runtime; .cargo/config.toml
     # links it statically, so the .exe must not import it.
@@ -58,23 +58,23 @@ case $os in
     for target in aarch64-apple-darwin x86_64-apple-darwin; do
       cargo build --release --locked --target "$target"
     done
-    app=dist/Omapower.app
+    app=dist/brrr.app
     rm -rf "$app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-    lipo -create -output "$app/Contents/MacOS/omapower" \
-      target/aarch64-apple-darwin/release/omapower target/x86_64-apple-darwin/release/omapower
+    lipo -create -output "$app/Contents/MacOS/brrr" \
+      target/aarch64-apple-darwin/release/brrr target/x86_64-apple-darwin/release/brrr
     version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
 
-    # The glass app icon (omapower-macos.svg), at every size Finder and the Dock ask for.
-    iconset=dist/omapower.iconset
+    # The glass app icon (brrr-macos.svg), at every size Finder and the Dock ask for.
+    iconset=dist/brrr.iconset
     rm -rf "$iconset"
     mkdir -p "$iconset"
     for size in 16 32 128 256 512; do
-      sips -z "$size" "$size" assets/icon/omapower-macos-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+      sips -z "$size" "$size" assets/icon/brrr-macos-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
       double=$((size * 2))
-      sips -z "$double" "$double" assets/icon/omapower-macos-1024.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+      sips -z "$double" "$double" assets/icon/brrr-macos-1024.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
     done
-    iconutil -c icns "$iconset" -o "$app/Contents/Resources/omapower.icns"
+    iconutil -c icns "$iconset" -o "$app/Contents/Resources/brrr.icns"
     rm -rf "$iconset"
 
     # LSUIElement: a menu bar app, without a Dock icon or app menu.
@@ -83,11 +83,11 @@ case $os in
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleExecutable</key><string>omapower</string>
-  <key>CFBundleIconFile</key><string>omapower</string>
-  <key>CFBundleIdentifier</key><string>com.omapower.Omapower</string>
-  <key>CFBundleName</key><string>Omapower</string>
-  <key>CFBundleDisplayName</key><string>Omapower</string>
+  <key>CFBundleExecutable</key><string>brrr</string>
+  <key>CFBundleIconFile</key><string>brrr</string>
+  <key>CFBundleIdentifier</key><string>com.brrr.brrr</string>
+  <key>CFBundleName</key><string>brrr</string>
+  <key>CFBundleDisplayName</key><string>brrr</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -100,7 +100,7 @@ PLIST
     # Ad-hoc signature, after every file is in place: Apple Silicon refuses
     # to run unsigned code.
     codesign --force --sign - "$app"
-    smoke "$app/Contents/MacOS/omapower"
+    smoke "$app/Contents/MacOS/brrr"
 
     # A disk image with the app beside a link to Applications, so installing
     # is a drag.
@@ -109,9 +109,9 @@ PLIST
     mkdir -p "$staging"
     cp -R "$app" "$staging/"
     ln -s /Applications "$staging/Applications"
-    dmg=dist/omapower-macos.dmg
+    dmg=dist/brrr-macos.dmg
     rm -f "$dmg"
-    hdiutil create -volname "Omapower $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$dmg"
+    hdiutil create -volname "brrr $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$dmg"
     hdiutil verify "$dmg"
     rm -rf "$staging"
     out="$app and $dmg"
@@ -126,13 +126,13 @@ PLIST
       fi
     fi
     for each in x86_64 aarch64; do
-      [ -f "dist/omapower-windows-$each.exe" ] || { echo "missing dist/omapower-windows-$each.exe" >&2; exit 1; }
+      [ -f "dist/brrr-windows-$each.exe" ] || { echo "missing dist/brrr-windows-$each.exe" >&2; exit 1; }
     done
     version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
     # The script's paths are relative to itself (dist/ by default). Keep
     # Git Bash from rewriting the /D option into a path.
-    MSYS2_ARG_CONV_EXCL='*' "$iscc" "/DAppVersion=$version" installer/windows/omapower.iss
-    out=dist/omapower-windows-setup.exe
+    MSYS2_ARG_CONV_EXCL='*' "$iscc" "/DAppVersion=$version" installer/windows/brrr.iss
+    out=dist/brrr-windows-setup.exe
     [ -f "$out" ] || { echo "Inno Setup did not produce $out" >&2; exit 1; }
     ;;
   *) echo "usage: scripts/build-release.sh linux|windows|windows-installer|macos" >&2; exit 2 ;;

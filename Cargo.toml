@@ -1,10 +1,10 @@
 [package]
-name = "omapower"
+name = "brrr"
 version = "2.0.0"
 edition = "2024"
 license = "MIT"
-description = "Full power while you compile: switch to the performance profile while chosen commands run"
-repository = "https://github.com/valvesky/omapower"
+description = "Full power while something heavy is running, then quiet again"
+repository = "https://github.com/valvesky/brrr"
 rust-version = "1.89"
 
 [profile.release]

@@ -66,7 +66,7 @@ impl Drop for Notifications {
             if let Some(context) = self.context.take() {
                 Box::leak(context);
             }
-            eprintln!("omapower: could not unregister effective power mode notifications");
+            eprintln!("brrr: could not unregister effective power mode notifications");
         }
     }
 }
@@ -528,7 +528,7 @@ impl Worker {
                     });
                 }
                 Ok(true) => {}
-                Err(error) => eprintln!("omapower: check power mode: {error}"),
+                Err(error) => eprintln!("brrr: check power mode: {error}"),
             }
         }
         if self.api.notifications.is_none() {
@@ -597,7 +597,7 @@ impl PowerBackend {
                 if let Some((cookie, _)) = worker.held {
                     if let Err(error) = worker.release(cookie) {
                         // Retain the journal for the next startup if Windows refuses.
-                        eprintln!("omapower: restore power mode on shutdown: {error}");
+                        eprintln!("brrr: restore power mode on shutdown: {error}");
                     }
                 }
             })

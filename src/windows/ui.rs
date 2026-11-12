@@ -33,7 +33,7 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-const CLASS: &str = "Omapower.Tray";
+const CLASS: &str = "brrr.Tray";
 const WAKE: u32 = WM_APP + 1;
 const TRAY: u32 = WM_APP + 2;
 const AUTO: u32 = 1;
@@ -84,7 +84,7 @@ pub(super) fn alert(owner: HWND, message: &str) {
         MessageBoxW(
             owner,
             wide(message).as_ptr(),
-            wide("Omapower").as_ptr(),
+            wide("brrr").as_ptr(),
             MB_OK | MB_ICONERROR,
         )
     };
@@ -96,7 +96,7 @@ pub fn information(message: &str) {
         MessageBoxW(
             null_mut(),
             wide(message).as_ptr(),
-            wide("Omapower").as_ptr(),
+            wide("brrr").as_ptr(),
             MB_OK | MB_ICONINFORMATION,
         )
     };
@@ -229,7 +229,7 @@ impl Ui {
             data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
             data.uCallbackMessage = TRAY;
             data.hIcon = icon.handle();
-            data.szTip = tooltip(&format!("Omapower — {}", state.summary()));
+            data.szTip = tooltip(&format!("brrr — {}", state.summary()));
             // SAFETY: the sized data borrows our live icon; Shell copies the icon image.
             let success = unsafe {
                 let mut result = 0;
@@ -332,8 +332,8 @@ impl Ui {
         if !names.is_empty() {
             commands.item(MF_SEPARATOR, 0, "")?;
         }
-        commands.item(MF_STRING, ADD as usize, "Add command…")?;
-        menu.item(MF_POPUP, commands.0 as usize, "Watched commands")?;
+        commands.item(MF_STRING, ADD as usize, "Add app…")?;
+        menu.item(MF_POPUP, commands.0 as usize, "Watched apps")?;
         // The parent menu now owns the submenu, including on later errors.
         std::mem::forget(commands);
         menu.item(MF_STRING, OPEN as usize, "Open configuration file")?;
@@ -388,10 +388,10 @@ impl Ui {
                     let result = login::set(enable);
                     match &result {
                         Ok(()) => eprintln!(
-                            "omapower: {} start at login",
+                            "brrr: {} start at login",
                             if enable { "enabled" } else { "disabled" }
                         ),
-                        Err(error) => eprintln!("omapower: {error}"),
+                        Err(error) => eprintln!("brrr: {error}"),
                     }
                     result
                 });
@@ -406,7 +406,7 @@ impl Ui {
                         MessageBoxW(
                             hwnd,
                             wide(&format!("Stop watching “{name}”?")).as_ptr(),
-                            wide("Omapower").as_ptr(),
+                            wide("brrr").as_ptr(),
                             MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2,
                         ) == IDYES
                     };
@@ -663,7 +663,7 @@ pub fn run(events: Events, receive: Receiver<Event>) -> i32 {
         CreateWindowExW(
             WS_EX_TOOLWINDOW,
             wide(CLASS).as_ptr(),
-            wide("Omapower").as_ptr(),
+            wide("brrr").as_ptr(),
             WS_POPUP,
             0,
             0,
@@ -694,7 +694,7 @@ pub fn run(events: Events, receive: Receiver<Event>) -> i32 {
     let address = hwnd as usize;
     let engine_shared = shared.clone();
     let worker = thread::Builder::new()
-        .name("omapower-engine".into())
+        .name("brrr-engine".into())
         .spawn(move || {
             let frontend_shared = engine_shared.clone();
             // Construct Engine on this thread: it intentionally is not Send.
@@ -761,7 +761,9 @@ mod tests {
         let tip = tooltip(&format!("{}😀", "x".repeat(126)));
         assert_eq!(tip[126], 0);
         assert!(String::from_utf16(&tip[..126]).is_ok());
-        assert_eq!(tooltip("Omapower — Waiting")[18], 0);
+        let tip = tooltip("brrr — Waiting");
+        let end = tip.iter().position(|unit| *unit == 0).unwrap();
+        assert_eq!(String::from_utf16(&tip[..end]).unwrap(), "brrr — Waiting");
         assert_eq!(menu_text("cc&link"), "cc&&link");
     }
 }

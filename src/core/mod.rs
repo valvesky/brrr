@@ -20,10 +20,10 @@ pub enum Command {
 }
 
 pub const USAGE: &str = "\
-Usage: omapower [--tray | --headless] [--poll]
-       omapower --supervised [--poll]
-       omapower --add NAME | --remove NAME | --enable | --disable
-       omapower --install | --uninstall
+Usage: brrr [--tray | --headless] [--poll]
+       brrr --supervised [--poll]
+       brrr --add NAME | --remove NAME | --enable | --disable
+       brrr --install | --uninstall
 
   --tray        show the status icon (the default on Windows and macOS)
   --headless    run without an icon (the default on Linux, for systemd)
@@ -69,7 +69,7 @@ pub fn run_edit(edit: &Edit) -> i32 {
     match config::edit(edit) {
         Ok(()) => 0,
         Err(error) => {
-            eprintln!("omapower: {error}");
+            eprintln!("brrr: {error}");
             1
         }
     }
@@ -129,7 +129,7 @@ pub fn watch_stdin(events: engine::Events) {
                 Err(_) => break,
             }
         }
-        eprintln!("omapower: supervisor closed the pipe; exiting");
+        eprintln!("brrr: supervisor closed the pipe; exiting");
         let _ = events.send(engine::Event::Stop);
     });
 }
